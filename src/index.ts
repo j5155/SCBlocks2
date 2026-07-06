@@ -25,7 +25,7 @@ const blocklyDiv = document.getElementById('blocklyDiv');
 if (!blocklyDiv) {
   throw new Error(`div with id 'blocklyDiv' not found`);
 }
-const ws = Blockly.inject(blocklyDiv, {toolbox});
+const ws = Blockly.inject(blocklyDiv, {toolbox, renderer: 'zelos'});
 
 // This function resets the code and output divs, shows the
 // generated code from the workspace, and evals the code.
