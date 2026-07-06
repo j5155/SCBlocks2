@@ -2,12 +2,13 @@
   "name": "redone-systemcore-blocks-interface",
   "version": "1.0.0",
   "description": "A sample app using Blockly",
-  "main": "index.js",
+  "type": "module",
   "private": true,
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "webpack --mode production",
-    "start": "webpack serve --open --mode development"
+    "dev": "vite",
+    "start": "vite --open",
+    "build": "vite build",
+    "preview": "vite preview"
   },
   "keywords": [
     "blockly"
@@ -15,17 +16,15 @@
   "author": "",
   "license": "Apache-2.0",
   "devDependencies": {
-    "css-loader": "^7.1.4",
-    "html-webpack-plugin": "^5.6.7",
-    "source-map-loader": "^5.0.0",
-    "style-loader": "^4.0.0",
-    "ts-loader": "^9.6.1",
+    "@vitejs/plugin-vue": "^6.0.1",
     "typescript": "^6.0.3",
-    "webpack": "^5.107.2",
-    "webpack-cli": "^7.0.3",
-    "webpack-dev-server": "^5.2.5"
+    "vite": "^7.2.7"
   },
   "dependencies": {
-    "blockly": "^13.1.0"
+    "@nuxt/ui": "^4.6.1",
+    "blockly": "^13.1.0",
+    "tailwindcss": "^4.1.18",
+    "vue": "^3.5.25",
+    "vue-router": "^4.6.4"
   }
 }

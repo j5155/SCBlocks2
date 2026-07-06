@@ -12,7 +12,9 @@ your toolbox from scratch, or carefully choosing whether you need each block
 listed here.
 */
 
-// TODO styling
+const categoryCss = (name: string) => ({
+    row: `blocklyToolboxCategory systemcore-category systemcore-category-${name}`,
+});
 
 export let toolbox = {
     kind: 'categoryToolbox',
@@ -21,18 +23,21 @@ export let toolbox = {
             kind: 'category',
             name: 'Motion',
             categorystyle: 'motion_category',
+            cssConfig: categoryCss('motion'),
             contents: []
         },
         {
             kind: 'category',
             name: 'Events',
             categorystyle: 'events_category',
+            cssConfig: categoryCss('events'),
             contents: []
         },
         {
             kind: 'category',
             name: 'Control',
             categorystyle: 'control_category',
+            cssConfig: categoryCss('control'),
             contents: [
                 // TODO wait seconds
                 {
@@ -73,12 +78,14 @@ export let toolbox = {
             kind: 'category',
             name: 'Sensing',
             categorystyle: 'sensing_category',
+            cssConfig: categoryCss('sensing'),
             contents: []
         },
         {
             kind: 'category',
             name: 'Operators',
             categorystyle: 'operators_category',
+            cssConfig: categoryCss('operators'),
             contents: [
                 {
                     kind: 'block',
@@ -290,12 +297,14 @@ export let toolbox = {
             kind: 'category',
             name: 'Variables',
             categorystyle: 'variables_category',
+            cssConfig: categoryCss('variables'),
             contents: []
         },
         {
             kind: 'category',
             name: 'My Blocks',
             categorystyle: 'myblocks_category',
+            cssConfig: categoryCss('myblocks'),
             contents: []
         }
     ]
@@ -308,6 +317,7 @@ export const oldtoolbox = {
             kind: 'category',
             name: 'Logic',
             categorystyle: 'logic_category',
+            cssConfig: categoryCss('logic'),
             contents: [
                 {
                     kind: 'block',
@@ -343,6 +353,7 @@ export const oldtoolbox = {
             kind: 'category',
             name: 'Loops',
             categorystyle: 'loop_category',
+            cssConfig: categoryCss('control'),
             contents: [
                 {
                     kind: 'block',
@@ -406,6 +417,7 @@ export const oldtoolbox = {
             kind: 'category',
             name: 'Math',
             categorystyle: 'math_category',
+            cssConfig: categoryCss('operators'),
             contents: [
                 {
                     kind: 'block',
@@ -612,6 +624,7 @@ export const oldtoolbox = {
             kind: 'category',
             name: 'Text',
             categorystyle: 'text_category',
+            cssConfig: categoryCss('variables'),
             contents: [ // TODO ADD STARTING HERE 7/5/26
                 {
                     kind: 'block',
@@ -800,6 +813,7 @@ export const oldtoolbox = {
             kind: 'category',
             name: 'Lists',
             categorystyle: 'list_category',
+            cssConfig: categoryCss('lists'),
             contents: [
                 {
                     kind: 'block',
@@ -906,12 +920,14 @@ export const oldtoolbox = {
             kind: 'category',
             name: 'Variables',
             categorystyle: 'variable_category',
+            cssConfig: categoryCss('variables'),
             custom: 'VARIABLE',
         },
         {
             kind: 'category',
             name: 'Functions',
             categorystyle: 'procedure_category',
+            cssConfig: categoryCss('myblocks'),
             custom: 'PROCEDURE',
         },
     ],

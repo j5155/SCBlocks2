@@ -6,8 +6,8 @@
 
 import * as Blockly from 'blockly/core';
 
-// Create a custom block called 'add_text' that adds
-// text to the output div on the sample app.
+// Create a custom block called 'add_text' that prints
+// text in the generated Python program.
 // This is just an example and you should replace this with your
 // own custom blocks.
 const addText = {
