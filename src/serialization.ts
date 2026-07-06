@@ -27,6 +27,20 @@ export const load = function (workspace: Blockly.Workspace) {
 
   // Don't emit events during loading.
   Blockly.Events.disable();
-  Blockly.serialization.workspaces.load(JSON.parse(data), workspace, undefined);
-  Blockly.Events.enable();
+  try {
+    Blockly.serialization.workspaces.load(
+      JSON.parse(data),
+      workspace,
+      undefined,
+    );
+  } catch (error) {
+    // A saved workspace from an older/incompatible block set can fail to load
+    // (e.g. a block referencing a variable that no longer resolves). Rather than
+    // crash the whole app, drop the corrupt state and start clean.
+    console.warn('Discarding incompatible saved workspace:', error);
+    workspace.clear();
+    window.localStorage?.removeItem(storageKey);
+  } finally {
+    Blockly.Events.enable();
+  }
 };

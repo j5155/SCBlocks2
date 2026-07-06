@@ -7,6 +7,10 @@
   "scripts": {
     "dev": "vite",
     "start": "vite --open",
+    "typecheck": "tsc --noEmit",
+    "generate:a301": "node scripts/generate-a301-api.mjs",
+    "generate:api": "node scripts/generate-api.mjs",
+    "smoke": "tsc --ignoreConfig --ignoreDeprecations 6.0 --module CommonJS --target ES2019 --moduleResolution Node --skipLibCheck --esModuleInterop --rootDir . --outDir /tmp/systemcore-blocks-smoke scripts/smoke-blockly.ts && NODE_PATH=$PWD/node_modules node /tmp/systemcore-blocks-smoke/scripts/smoke-blockly.js",
     "build": "vite build",
     "preview": "vite preview"
   },
@@ -21,6 +25,7 @@
     "vite": "^7.2.7"
   },
   "dependencies": {
+    "@blockly/continuous-toolbox": "^13.1.0",
     "@nuxt/ui": "^4.6.1",
     "blockly": "^13.1.0",
     "tailwindcss": "^4.1.18",

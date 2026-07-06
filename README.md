@@ -35,3 +35,16 @@ This sounds very difficult to implement, and unnecessary in a proof of concept.
 
 Wpilib Python Commandsv3 support is necessary for good async blocks.
 We can do frontend work and planning without this but it would be really nice to have.
+
+# Current prototype
+
+The main toolbox path is now a small Spike Prime style surface for A301 robots:
+
+- Events starts a `when robot runs` wrapper that generates a command-based Python robot file.
+- Devices registers A301 motors as typed Blockly variables, so other blocks can select the same device by name.
+- Motion contains A301 motor action blocks.
+- Control contains command-safe wait, wait-until, repeat, parallel, and race blocks.
+- Sensing contains beginner-facing A301 value reads.
+- Events also exposes teleop, autonomous, and trigger blocks that generate command-based scheduling code.
+
+The old RobotPy-style "wrap every API" approach is treated as an advanced escape hatch instead of the primary workflow. The `Advanced APIs` toolbox category is generated from the A301 metadata projection and exposes raw A301 method calls, A301 value reporters, and one setup-line block for cases where a student-friendly block does not exist yet.

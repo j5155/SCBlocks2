@@ -1,0 +1,260 @@
+import * as Blockly from 'blockly';
+import 'blockly/blocks';
+import {pythonGenerator} from 'blockly/python';
+import {blocks} from '../src/blocks/text';
+import {addDevice, registerDeviceField, setDevices} from '../src/devices';
+import {forBlock, generateOpmodeClass} from '../src/generators/python';
+import {extensionBlocks, extensionForBlock} from '../src/extensions';
+import {
+  generateAllOpmodes,
+  makeOpmodeState,
+  opmodeInfoFromState,
+} from '../src/opmodes';
+import {buildToolbox, toolbox} from '../src/toolbox';
+
+const assert = (condition: unknown, message: string) => {
+  if (!condition) {
+    throw new Error(message);
+  }
+};
+
+const assertIncludes = (haystack: string, needle: string) => {
+  assert(haystack.includes(needle), `Expected generated code to include: ${needle}`);
+};
+
+registerDeviceField();
+if (!Blockly.Blocks['sc_opmode_details']) {
+  Blockly.common.defineBlocks(blocks);
+}
+if (!Blockly.Blocks['sc_ext_call']) {
+  Blockly.common.defineBlocks(extensionBlocks);
+}
+Object.assign(pythonGenerator.forBlock, forBlock);
+Object.assign(pythonGenerator.forBlock, extensionForBlock);
+
+const workspace = new Blockly.Workspace();
+// Motors live in the project-level registry now; adding one here makes it
+// register automatically in every generated opmode.
+const device = addDevice({name: 'drive_motor', bus: 0, deviceId: 3});
+
+const numberBlock = (value: number) => {
+  const block = workspace.newBlock('math_number');
+  block.setFieldValue(String(value), 'NUM');
+  return block;
+};
+
+const connectValue = (
+  parent: Blockly.Block,
+  inputName: string,
+  child: Blockly.Block,
+) => {
+  const input = parent.getInput(inputName);
+  assert(input?.connection, `${parent.type}.${inputName} is missing`);
+  assert(child.outputConnection, `${child.type} has no output connection`);
+  input!.connection!.connect(child.outputConnection!);
+};
+
+const connectStatement = (
+  parent: Blockly.Block,
+  inputName: string,
+  child: Blockly.Block,
+) => {
+  const input = parent.getInput(inputName);
+  assert(input?.connection, `${parent.type}.${inputName} is missing`);
+  assert(child.previousConnection, `${child.type} has no previous connection`);
+  input!.connection!.connect(child.previousConnection!);
+};
+
+const setDevice = (block: Blockly.Block) => {
+  block.setFieldValue(device.id, 'DEVICE');
+};
+
+// ---------------------------------------------------------------------------
+// OpMode: separate, opmode-scoped hat blocks (details / setup / start / trigger)
+// assembled into one decorated class by generateOpmodeClass().
+// ---------------------------------------------------------------------------
+
+const details = workspace.newBlock('sc_opmode_details');
+details.setFieldValue('Auto', 'TYPE');
+details.setFieldValue('TRUE', 'ENABLED');
+details.setFieldValue('Reach Zone', 'NAME');
+details.setFieldValue('Comp', 'GROUP');
+
+const startHat = workspace.newBlock('sc_on_start');
+const runForSeconds = workspace.newBlock('sc_motor_run_for_seconds');
+setDevice(runForSeconds);
+connectValue(runForSeconds, 'POWER', numberBlock(50));
+connectValue(runForSeconds, 'SECONDS', numberBlock(2));
+connectStatement(startHat, 'COMMANDS', runForSeconds);
+
+// Extension (escape hatch) block chained after the run command.
+const extCall = workspace.newBlock('sc_ext_call');
+extCall.setFieldValue('self.gyro', 'TARGET');
+extCall.setFieldValue('reset', 'METHOD');
+extCall.setFieldValue('', 'ARGS');
+runForSeconds.nextConnection!.connect(extCall.previousConnection!);
+
+// Opmode-scoped trigger with any boolean condition.
+const trigger = workspace.newBlock('sc_trigger');
+trigger.setFieldValue('whileTrue', 'MODE');
+const triggerCond = workspace.newBlock('logic_boolean');
+triggerCond.setFieldValue('TRUE', 'BOOL');
+connectValue(trigger, 'CONDITION', triggerCond);
+const triggerStop = workspace.newBlock('sc_motor_stop');
+setDevice(triggerStop);
+connectStatement(trigger, 'COMMANDS', triggerStop);
+
+pythonGenerator.init(workspace);
+const opmodeCode = generateOpmodeClass(workspace, pythonGenerator);
+assertIncludes(opmodeCode, '@blocks_base_classes.Auto');
+assertIncludes(opmodeCode, "@blocks_base_classes.Name('Reach Zone')");
+assertIncludes(opmodeCode, "@blocks_base_classes.Group('Comp')");
+assertIncludes(opmodeCode, 'class ReachZone(wpilib.OpModeRobot):');
+assertIncludes(opmodeCode, 'def start(self):');
+assertIncludes(opmodeCode, 'self.drive_motor = rev.A301(0, 3)');
+assertIncludes(opmodeCode, 'commands2.CommandScheduler.getInstance().run()');
+assertIncludes(opmodeCode, 'commands2.InstantCommand(lambda: self.gyro.reset())');
+assertIncludes(opmodeCode, 'commands2.button.Trigger(lambda:');
+assertIncludes(opmodeCode, 'trigger_1.whileTrue(');
+
+// A disabled opmode still generates the class but no registration decorator.
+details.setFieldValue('FALSE', 'ENABLED');
+pythonGenerator.init(workspace);
+const disabledCode = generateOpmodeClass(workspace, pythonGenerator);
+assert(
+  !disabledCode.includes('@blocks_base_classes.Auto'),
+  'Disabled opmode should not emit a type decorator',
+);
+details.setFieldValue('TRUE', 'ENABLED');
+
+// ---------------------------------------------------------------------------
+// Gamepad wrappers: reading a gamepad button/axis/trigger sets up the shared
+// user-controls helper in start() and reaches the gamepad by port through it.
+// ---------------------------------------------------------------------------
+
+const gamepadTrigger = workspace.newBlock('sc_trigger');
+const gamepadButton = workspace.newBlock('sc_gamepad_button');
+gamepadButton.setFieldValue('2', 'GAMEPAD');
+gamepadButton.setFieldValue('EastFace', 'BUTTON');
+gamepadButton.setFieldValue('Pressed', 'STATE');
+connectValue(gamepadTrigger, 'CONDITION', gamepadButton);
+const gamepadStop = workspace.newBlock('sc_motor_stop');
+setDevice(gamepadStop);
+connectStatement(gamepadTrigger, 'COMMANDS', gamepadStop);
+
+pythonGenerator.init(workspace);
+const gamepadCode = generateOpmodeClass(workspace, pythonGenerator);
+assertIncludes(
+  gamepadCode,
+  'self.userControls = blocks_base_classes.DefaultUserControls()',
+);
+assertIncludes(
+  gamepadCode,
+  'self.userControls.getGamepad(1).getEastFaceButtonPressed()',
+);
+gamepadTrigger.dispose(true);
+
+// The gamepad category is Teleop-only: present when requested, absent from the
+// default toolbox.
+const teleopCategoryNames = buildToolbox({includeGamepad: true}).contents
+  .filter((item) => item.kind === 'category')
+  .map((item) => (item as {name?: string}).name);
+assert(
+  teleopCategoryNames.includes('Gamepad'),
+  'Teleop toolbox should include the Gamepad category',
+);
+
+// ---------------------------------------------------------------------------
+// Escape hatch: generated API must NOT be in the default toolbox.
+// ---------------------------------------------------------------------------
+
+const categoryNames = toolbox.contents
+  .filter((item) => item.kind === 'category')
+  .map((item) => (item as {name?: string}).name);
+// OpModes are tabs (one workspace + hat block each), not a toolbox category.
+assert(!categoryNames.includes('OpModes'), 'OpModes should be tabs, not a category');
+assert(
+  !categoryNames.includes('Gamepad'),
+  'Default toolbox must not include the Gamepad category (Teleop-only)',
+);
+
+const extensionsCategory = toolbox.contents.find(
+  (item) => item.kind === 'category' && (item as {name?: string}).name === 'Extensions',
+);
+assert(extensionsCategory, 'Missing Extensions category');
+assert(
+  'custom' in (extensionsCategory as object),
+  'Extensions category should be a dynamic (custom) category, not static blocks',
+);
+assert(
+  !categoryNames.includes('Advanced APIs'),
+  'Generated API blocks must not be in the default toolbox',
+);
+
+const serialized = JSON.stringify(toolbox);
+assert(
+  !serialized.includes('sc_ext_call') &&
+    !serialized.includes('sc_ext_value') &&
+    !serialized.includes('sc_ext_enum'),
+  'Escape-hatch blocks must not be baked into the default toolbox definition',
+);
+
+// ---------------------------------------------------------------------------
+// Motors: managed through the project registry, registered automatically, and
+// no longer a toolbox category.
+// ---------------------------------------------------------------------------
+
+assert(
+  !categoryNames.includes('Devices'),
+  'Devices should no longer be a toolbox category (motors are UI-managed)',
+);
+assert(
+  !Blockly.Blocks['sc_a301_motor'],
+  'The manual register-motor block should be removed',
+);
+
+// Motor blocks pick a motor through the custom field_device dropdown.
+const powerBlock = workspace.newBlock('sc_motor_set_power');
+assert(
+  powerBlock.getField('DEVICE')?.constructor.name === 'FieldDevice',
+  'Motor blocks should use the FieldDevice dropdown',
+);
+powerBlock.dispose(true);
+
+// Adding a second motor makes it auto-register in generated opmodes too.
+addDevice({name: 'arm_motor', bus: 1, deviceId: 7});
+const registrationCheck = generateAllOpmodes([
+  {id: 'reg', state: makeOpmodeState('Teleop', 'Drive')},
+]);
+assertIncludes(registrationCheck, 'self.drive_motor = rev.A301(0, 3)');
+assertIncludes(registrationCheck, 'self.arm_motor = rev.A301(1, 7)');
+
+// Clearing the registry means no motors are registered.
+setDevices([]);
+const emptyCheck = generateAllOpmodes([
+  {id: 'empty', state: makeOpmodeState('Teleop', 'Drive')},
+]);
+assert(
+  !emptyCheck.includes('rev.A301('),
+  'No motors should be registered when the registry is empty',
+);
+setDevices([device]);
+
+// ---------------------------------------------------------------------------
+// OpMode tabs: each tab is its own workspace + hat block, generating its own
+// class. Two tabs => two classes.
+// ---------------------------------------------------------------------------
+
+const teleopTab = {id: 'a', state: makeOpmodeState('Teleop', 'Drive')};
+const autoTab = {id: 'b', state: makeOpmodeState('Auto', 'Score')};
+assert(opmodeInfoFromState(teleopTab.state).type === 'Teleop', 'Bad tab info parse');
+assert(opmodeInfoFromState(autoTab.state).name === 'Score', 'Bad tab name parse');
+
+const multiCode = generateAllOpmodes([teleopTab, autoTab]);
+assertIncludes(multiCode, 'class Drive(wpilib.OpModeRobot):');
+assertIncludes(multiCode, 'class Score(wpilib.OpModeRobot):');
+assertIncludes(multiCode, '@blocks_base_classes.Teleop');
+assertIncludes(multiCode, '@blocks_base_classes.Auto');
+
+workspace.dispose();
+console.log('Blockly smoke check passed');

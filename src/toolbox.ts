@@ -1,934 +1,337 @@
-/**
- * @license
- * Copyright 2023 Google LLC
- * SPDX-License-Identifier: Apache-2.0
- */
+import {EXTENSIONS_TOOLBOX_CATEGORY} from './extensions';
 
-/*
-This toolbox contains nearly every single built-in block that Blockly offers,
-in addition to the custom block 'add_text' this sample app adds.
-You probably don't need every single block, and should consider either rewriting
-your toolbox from scratch, or carefully choosing whether you need each block
-listed here.
-*/
+type ToolboxInput = {
+  shadow?: ToolboxBlock;
+  block?: ToolboxBlock;
+};
+
+type ToolboxBlock = {
+  kind: 'block';
+  type: string;
+  fields?: Record<string, unknown>;
+  inputs?: Record<string, ToolboxInput>;
+  next?: {
+    block: ToolboxBlock;
+  };
+};
 
 const categoryCss = (name: string) => ({
-    row: `blocklyToolboxCategory systemcore-category systemcore-category-${name}`,
+  row: `blocklyToolboxCategory systemcore-category systemcore-category-${name}`,
 });
 
-export let toolbox = {
-    kind: 'categoryToolbox',
-    contents: [
-        {
-            kind: 'category',
-            name: 'Motion',
-            categorystyle: 'motion_category',
-            cssConfig: categoryCss('motion'),
-            contents: []
-        },
-        {
-            kind: 'category',
-            name: 'Events',
-            categorystyle: 'events_category',
-            cssConfig: categoryCss('events'),
-            contents: []
-        },
-        {
-            kind: 'category',
-            name: 'Control',
-            categorystyle: 'control_category',
-            cssConfig: categoryCss('control'),
-            contents: [
-                // TODO wait seconds
-                {
-                    kind: 'block',
-                    type: 'controls_repeat_ext',
-                    inputs: {
-                        TIMES: {
-                            shadow: {
-                                type: 'math_number',
-                                fields: {
-                                    NUM: 10,
-                                },
-                            },
-                        },
-                    },
-                },
-                // TODO FOREVER
-                {
-                    kind: 'block',
-                    type: 'controls_if', // TODO make normal if statement not mutator
-                },
-                {
-                    kind: 'block',
-                    type: 'controls_ifelse',
-                },
-                // TODO WAIT UNTIL
-                {
-                    kind: 'block',
-                    type: 'controls_whileUntil', // lets you pick between repeat while and repeat until, which is a change, but I think a good idea
-                },
-                {
-                    kind: 'block',
-                    type: 'controls_flow_statements', // different but more useful then scratch equivalent
-                },
-            ]
-        },
-        {
-            kind: 'category',
-            name: 'Sensing',
-            categorystyle: 'sensing_category',
-            cssConfig: categoryCss('sensing'),
-            contents: []
-        },
-        {
-            kind: 'category',
-            name: 'Operators',
-            categorystyle: 'operators_category',
-            cssConfig: categoryCss('operators'),
-            contents: [
-                {
-                    kind: 'block',
-                    type: 'math_arithmetic', // TODO split from selector into options
-                    inputs: {
-                        A: {
-                            shadow: {
-                                type: 'math_number',
-                                fields: {
-                                    NUM: 1,
-                                },
-                            },
-                        },
-                        B: {
-                            shadow: {
-                                type: 'math_number',
-                                fields: {
-                                    NUM: 1,
-                                },
-                            },
-                        },
-                    },
-                },
-                {
-                    kind: 'block',
-                    type: 'math_random_int',
-                    inputs: {
-                        FROM: {
-                            shadow: {
-                                type: 'math_number',
-                                fields: {
-                                    NUM: 1,
-                                },
-                            },
-                        },
-                        TO: {
-                            shadow: {
-                                type: 'math_number',
-                                fields: {
-                                    NUM: 100,
-                                },
-                            },
-                        },
-                    },
-                },
-                {
-                    kind: 'block',
-                    type: 'math_random_float',
-                },
-                {
-                    kind: 'block',
-                    type: 'logic_compare',
-                },
-                {
-                    kind: 'block',
-                    type: 'logic_operation',
-                },
-                {
-                    kind: 'block',
-                    type: 'logic_negate',
-                },
-                {
-                    kind: 'block',
-                    type: 'math_single',
-                    inputs: {
-                        NUM: {
-                            shadow: {
-                                type: 'math_number',
-                                fields: {
-                                    NUM: 9,
-                                },
-                            },
-                        },
-                    },
-                },
-                {
-                    kind: 'block',
-                    type: 'math_trig',
-                    inputs: {
-                        NUM: {
-                            shadow: {
-                                type: 'math_number',
-                                fields: {
-                                    NUM: 45,
-                                },
-                            },
-                        },
-                    },
-                },
-                {
-                    kind: 'block',
-                    type: 'math_constant',
-                },
-                {
-                    kind: 'block',
-                    type: 'math_number_property',
-                    inputs: {
-                        NUMBER_TO_CHECK: {
-                            shadow: {
-                                type: 'math_number',
-                                fields: {
-                                    NUM: 0,
-                                },
-                            },
-                        },
-                    },
-                },
-                {
-                    kind: 'block',
-                    type: 'math_round',
-                    fields: {
-                        OP: 'ROUND',
-                    },
-                    inputs: {
-                        NUM: {
-                            shadow: {
-                                type: 'math_number',
-                                fields: {
-                                    NUM: 3.1,
-                                },
-                            },
-                        },
-                    },
-                },
-                {
-                    kind: 'block',
-                    type: 'math_on_list',
-                    fields: {
-                        OP: 'SUM',
-                    },
-                },
-                {
-                    kind: 'block',
-                    type: 'math_modulo',
-                    inputs: {
-                        DIVIDEND: {
-                            shadow: {
-                                type: 'math_number',
-                                fields: {
-                                    NUM: 64,
-                                },
-                            },
-                        },
-                        DIVISOR: {
-                            shadow: {
-                                type: 'math_number',
-                                fields: {
-                                    NUM: 10,
-                                },
-                            },
-                        },
-                    },
-                },
-                {
-                    kind: 'block',
-                    type: 'math_constrain',
-                    inputs: {
-                        VALUE: {
-                            shadow: {
-                                type: 'math_number',
-                                fields: {
-                                    NUM: 50,
-                                },
-                            },
-                        },
-                        LOW: {
-                            shadow: {
-                                type: 'math_number',
-                                fields: {
-                                    NUM: 1,
-                                },
-                            },
-                        },
-                        HIGH: {
-                            shadow: {
-                                type: 'math_number',
-                                fields: {
-                                    NUM: 100,
-                                },
-                            },
-                        },
-                    },
-                },
-                {
-                    kind: 'block',
-                    type: 'math_atan2',
-                    inputs: {
-                        X: {
-                            shadow: {
-                                type: 'math_number',
-                                fields: {
-                                    NUM: 1,
-                                },
-                            },
-                        },
-                        Y: {
-                            shadow: {
-                                type: 'math_number',
-                                fields: {
-                                    NUM: 1,
-                                },
-                            },
-                        },
-                    },
-                },
-            ]
-        },
-        {
-            kind: 'category',
-            name: 'Variables',
-            categorystyle: 'variables_category',
-            cssConfig: categoryCss('variables'),
-            contents: []
-        },
-        {
-            kind: 'category',
-            name: 'My Blocks',
-            categorystyle: 'myblocks_category',
-            cssConfig: categoryCss('myblocks'),
-            contents: []
-        }
-    ]
-}
+const numberShadow = (value: number): ToolboxBlock => ({
+  kind: 'block',
+  type: 'math_number',
+  fields: {
+    NUM: value,
+  },
+});
 
-export const oldtoolbox = {
-    kind: 'categoryToolbox',
-    contents: [
-        {
-            kind: 'category',
-            name: 'Logic',
-            categorystyle: 'logic_category',
-            cssConfig: categoryCss('logic'),
-            contents: [
-                {
-                    kind: 'block',
-                    type: 'controls_if',
-                },
-                {
-                    kind: 'block',
-                    type: 'logic_compare',
-                },
-                {
-                    kind: 'block',
-                    type: 'logic_operation',
-                },
-                {
-                    kind: 'block',
-                    type: 'logic_negate',
-                },
-                {
-                    kind: 'block',
-                    type: 'logic_boolean',
-                },
-                {
-                    kind: 'block',
-                    type: 'logic_null',
-                },
-                {
-                    kind: 'block',
-                    type: 'logic_ternary',
-                },
-            ],
+// Motor blocks in the flyout leave DEVICE unset so the field defaults to the
+// first registered motor (the motor list is managed in the Motors modal).
+const runForSecondsBlock = (): ToolboxBlock => ({
+  kind: 'block',
+  type: 'sc_motor_run_for_seconds',
+  inputs: {
+    POWER: {
+      shadow: numberShadow(40),
+    },
+    SECONDS: {
+      shadow: numberShadow(1),
+    },
+  },
+});
+
+const stopMotorBlock = (): ToolboxBlock => ({
+  kind: 'block',
+  type: 'sc_motor_stop',
+});
+
+const sensorValueBlock = (): ToolboxBlock => ({
+  kind: 'block',
+  type: 'sc_a301_sensor_value',
+});
+
+const sensorGreaterThanBlock = (value: number): ToolboxBlock => ({
+  kind: 'block',
+  type: 'logic_compare',
+  fields: {
+    OP: 'GT',
+  },
+  inputs: {
+    A: {
+      block: sensorValueBlock(),
+    },
+    B: {
+      shadow: numberShadow(value),
+    },
+  },
+});
+
+const gamepadButtonBlock = (button: string, state: string): ToolboxBlock => ({
+  kind: 'block',
+  type: 'sc_gamepad_button',
+  fields: {GAMEPAD: '1', BUTTON: button, STATE: state},
+});
+
+// Only shown in Teleop opmodes (see buildToolbox / App.vue): reading driver
+// input, and a ready-made "when a button is pressed, do …" gamepad trigger.
+const gamepadCategory = {
+  kind: 'category',
+  name: 'Gamepad',
+  categorystyle: 'sensing_category',
+  cssConfig: categoryCss('sensing'),
+  contents: [
+    gamepadButtonBlock('SouthFace', 'Pressed'),
+    {
+      kind: 'block',
+      type: 'sc_gamepad_axis',
+      fields: {GAMEPAD: '1', AXIS: 'LeftY'},
+    },
+    {
+      kind: 'block',
+      type: 'sc_gamepad_trigger',
+      fields: {GAMEPAD: '1', SIDE: 'Left'},
+    },
+    {
+      kind: 'block',
+      type: 'sc_trigger',
+      inputs: {
+        CONDITION: {
+          block: gamepadButtonBlock('SouthFace', 'Pressed'),
         },
-        {
-            kind: 'category',
-            name: 'Loops',
-            categorystyle: 'loop_category',
-            cssConfig: categoryCss('control'),
-            contents: [
-                {
-                    kind: 'block',
-                    type: 'controls_repeat_ext',
-                    inputs: {
-                        TIMES: {
-                            shadow: {
-                                type: 'math_number',
-                                fields: {
-                                    NUM: 10,
-                                },
-                            },
-                        },
-                    },
-                },
-                {
-                    kind: 'block',
-                    type: 'controls_whileUntil',
-                },
-                {
-                    kind: 'block',
-                    type: 'controls_for',
-                    inputs: {
-                        FROM: {
-                            shadow: {
-                                type: 'math_number',
-                                fields: {
-                                    NUM: 1,
-                                },
-                            },
-                        },
-                        TO: {
-                            shadow: {
-                                type: 'math_number',
-                                fields: {
-                                    NUM: 10,
-                                },
-                            },
-                        },
-                        BY: {
-                            shadow: {
-                                type: 'math_number',
-                                fields: {
-                                    NUM: 1,
-                                },
-                            },
-                        },
-                    },
-                },
-                {
-                    kind: 'block',
-                    type: 'controls_forEach',
-                },
-                {
-                    kind: 'block',
-                    type: 'controls_flow_statements',
-                },
-            ],
+        COMMANDS: {
+          block: stopMotorBlock(),
         },
-        {
-            kind: 'category',
-            name: 'Math',
-            categorystyle: 'math_category',
-            cssConfig: categoryCss('operators'),
-            contents: [
-                {
-                    kind: 'block',
-                    type: 'math_number',
-                    fields: {
-                        NUM: 123,
-                    },
-                },
-                {
-                    kind: 'block',
-                    type: 'math_arithmetic',
-                    inputs: {
-                        A: {
-                            shadow: {
-                                type: 'math_number',
-                                fields: {
-                                    NUM: 1,
-                                },
-                            },
-                        },
-                        B: {
-                            shadow: {
-                                type: 'math_number',
-                                fields: {
-                                    NUM: 1,
-                                },
-                            },
-                        },
-                    },
-                },
-                {
-                    kind: 'block',
-                    type: 'math_single',
-                    inputs: {
-                        NUM: {
-                            shadow: {
-                                type: 'math_number',
-                                fields: {
-                                    NUM: 9,
-                                },
-                            },
-                        },
-                    },
-                },
-                {
-                    kind: 'block',
-                    type: 'math_trig',
-                    inputs: {
-                        NUM: {
-                            shadow: {
-                                type: 'math_number',
-                                fields: {
-                                    NUM: 45,
-                                },
-                            },
-                        },
-                    },
-                },
-                {
-                    kind: 'block',
-                    type: 'math_constant',
-                },
-                {
-                    kind: 'block',
-                    type: 'math_number_property',
-                    inputs: {
-                        NUMBER_TO_CHECK: {
-                            shadow: {
-                                type: 'math_number',
-                                fields: {
-                                    NUM: 0,
-                                },
-                            },
-                        },
-                    },
-                },
-                {
-                    kind: 'block',
-                    type: 'math_round',
-                    fields: {
-                        OP: 'ROUND',
-                    },
-                    inputs: {
-                        NUM: {
-                            shadow: {
-                                type: 'math_number',
-                                fields: {
-                                    NUM: 3.1,
-                                },
-                            },
-                        },
-                    },
-                },
-                {
-                    kind: 'block',
-                    type: 'math_on_list',
-                    fields: {
-                        OP: 'SUM',
-                    },
-                },
-                {
-                    kind: 'block',
-                    type: 'math_modulo',
-                    inputs: {
-                        DIVIDEND: {
-                            shadow: {
-                                type: 'math_number',
-                                fields: {
-                                    NUM: 64,
-                                },
-                            },
-                        },
-                        DIVISOR: {
-                            shadow: {
-                                type: 'math_number',
-                                fields: {
-                                    NUM: 10,
-                                },
-                            },
-                        },
-                    },
-                },
-                {
-                    kind: 'block',
-                    type: 'math_constrain',
-                    inputs: {
-                        VALUE: {
-                            shadow: {
-                                type: 'math_number',
-                                fields: {
-                                    NUM: 50,
-                                },
-                            },
-                        },
-                        LOW: {
-                            shadow: {
-                                type: 'math_number',
-                                fields: {
-                                    NUM: 1,
-                                },
-                            },
-                        },
-                        HIGH: {
-                            shadow: {
-                                type: 'math_number',
-                                fields: {
-                                    NUM: 100,
-                                },
-                            },
-                        },
-                    },
-                },
-                {
-                    kind: 'block',
-                    type: 'math_random_int',
-                    inputs: {
-                        FROM: {
-                            shadow: {
-                                type: 'math_number',
-                                fields: {
-                                    NUM: 1,
-                                },
-                            },
-                        },
-                        TO: {
-                            shadow: {
-                                type: 'math_number',
-                                fields: {
-                                    NUM: 100,
-                                },
-                            },
-                        },
-                    },
-                },
-                {
-                    kind: 'block',
-                    type: 'math_random_float',
-                },
-                {
-                    kind: 'block',
-                    type: 'math_atan2',
-                    inputs: {
-                        X: {
-                            shadow: {
-                                type: 'math_number',
-                                fields: {
-                                    NUM: 1,
-                                },
-                            },
-                        },
-                        Y: {
-                            shadow: {
-                                type: 'math_number',
-                                fields: {
-                                    NUM: 1,
-                                },
-                            },
-                        },
-                    },
-                },
-            ],
-        },
-        {
-            kind: 'category',
-            name: 'Text',
-            categorystyle: 'text_category',
-            cssConfig: categoryCss('variables'),
-            contents: [ // TODO ADD STARTING HERE 7/5/26
-                {
-                    kind: 'block',
-                    type: 'text',
-                },
-                {
-                    kind: 'block',
-                    type: 'text_join',
-                },
-                {
-                    kind: 'block',
-                    type: 'text_append',
-                    inputs: {
-                        TEXT: {
-                            shadow: {
-                                type: 'text',
-                                fields: {
-                                    TEXT: '',
-                                },
-                            },
-                        },
-                    },
-                },
-                {
-                    kind: 'block',
-                    type: 'text_length',
-                    inputs: {
-                        VALUE: {
-                            shadow: {
-                                type: 'text',
-                                fields: {
-                                    TEXT: 'abc',
-                                },
-                            },
-                        },
-                    },
-                },
-                {
-                    kind: 'block',
-                    type: 'text_isEmpty',
-                    inputs: {
-                        VALUE: {
-                            shadow: {
-                                type: 'text',
-                                fields: {
-                                    TEXT: '',
-                                },
-                            },
-                        },
-                    },
-                },
-                {
-                    kind: 'block',
-                    type: 'text_indexOf',
-                    inputs: {
-                        VALUE: {
-                            block: {
-                                type: 'variables_get',
-                            },
-                        },
-                        FIND: {
-                            shadow: {
-                                type: 'text',
-                                fields: {
-                                    TEXT: 'abc',
-                                },
-                            },
-                        },
-                    },
-                },
-                {
-                    kind: 'block',
-                    type: 'text_charAt',
-                    inputs: {
-                        VALUE: {
-                            block: {
-                                type: 'variables_get',
-                            },
-                        },
-                    },
-                },
-                {
-                    kind: 'block',
-                    type: 'text_getSubstring',
-                    inputs: {
-                        STRING: {
-                            block: {
-                                type: 'variables_get',
-                            },
-                        },
-                    },
-                },
-                {
-                    kind: 'block',
-                    type: 'text_changeCase',
-                    inputs: {
-                        TEXT: {
-                            shadow: {
-                                type: 'text',
-                                fields: {
-                                    TEXT: 'abc',
-                                },
-                            },
-                        },
-                    },
-                },
-                {
-                    kind: 'block',
-                    type: 'text_trim',
-                    inputs: {
-                        TEXT: {
-                            shadow: {
-                                type: 'text',
-                                fields: {
-                                    TEXT: 'abc',
-                                },
-                            },
-                        },
-                    },
-                },
-                {
-                    kind: 'block',
-                    type: 'text_count',
-                    inputs: {
-                        SUB: {
-                            shadow: {
-                                type: 'text',
-                            },
-                        },
-                        TEXT: {
-                            shadow: {
-                                type: 'text',
-                            },
-                        },
-                    },
-                },
-                {
-                    kind: 'block',
-                    type: 'text_replace',
-                    inputs: {
-                        FROM: {
-                            shadow: {
-                                type: 'text',
-                            },
-                        },
-                        TO: {
-                            shadow: {
-                                type: 'text',
-                            },
-                        },
-                        TEXT: {
-                            shadow: {
-                                type: 'text',
-                            },
-                        },
-                    },
-                },
-                {
-                    kind: 'block',
-                    type: 'text_reverse',
-                    inputs: {
-                        TEXT: {
-                            shadow: {
-                                type: 'text',
-                            },
-                        },
-                    },
-                },
-                {
-                    kind: 'block',
-                    type: 'add_text',
-                    inputs: {
-                        TEXT: {
-                            shadow: {
-                                type: 'text',
-                                fields: {
-                                    TEXT: 'abc',
-                                },
-                            },
-                        },
-                    },
-                },
-            ],
-        },
-        {
-            kind: 'category',
-            name: 'Lists',
-            categorystyle: 'list_category',
-            cssConfig: categoryCss('lists'),
-            contents: [
-                {
-                    kind: 'block',
-                    type: 'lists_create_with',
-                },
-                {
-                    kind: 'block',
-                    type: 'lists_create_with',
-                },
-                {
-                    kind: 'block',
-                    type: 'lists_repeat',
-                    inputs: {
-                        NUM: {
-                            shadow: {
-                                type: 'math_number',
-                                fields: {
-                                    NUM: 5,
-                                },
-                            },
-                        },
-                    },
-                },
-                {
-                    kind: 'block',
-                    type: 'lists_length',
-                },
-                {
-                    kind: 'block',
-                    type: 'lists_isEmpty',
-                },
-                {
-                    kind: 'block',
-                    type: 'lists_indexOf',
-                    inputs: {
-                        VALUE: {
-                            block: {
-                                type: 'variables_get',
-                            },
-                        },
-                    },
-                },
-                {
-                    kind: 'block',
-                    type: 'lists_getIndex',
-                    inputs: {
-                        VALUE: {
-                            block: {
-                                type: 'variables_get',
-                            },
-                        },
-                    },
-                },
-                {
-                    kind: 'block',
-                    type: 'lists_setIndex',
-                    inputs: {
-                        LIST: {
-                            block: {
-                                type: 'variables_get',
-                            },
-                        },
-                    },
-                },
-                {
-                    kind: 'block',
-                    type: 'lists_getSublist',
-                    inputs: {
-                        LIST: {
-                            block: {
-                                type: 'variables_get',
-                            },
-                        },
-                    },
-                },
-                {
-                    kind: 'block',
-                    type: 'lists_split',
-                    inputs: {
-                        DELIM: {
-                            shadow: {
-                                type: 'text',
-                                fields: {
-                                    TEXT: ',',
-                                },
-                            },
-                        },
-                    },
-                },
-                {
-                    kind: 'block',
-                    type: 'lists_sort',
-                },
-                {
-                    kind: 'block',
-                    type: 'lists_reverse',
-                },
-            ],
-        },
-        {
-            kind: 'sep',
-        },
-        {
-            kind: 'category',
-            name: 'Variables',
-            categorystyle: 'variable_category',
-            cssConfig: categoryCss('variables'),
-            custom: 'VARIABLE',
-        },
-        {
-            kind: 'category',
-            name: 'Functions',
-            categorystyle: 'procedure_category',
-            cssConfig: categoryCss('myblocks'),
-            custom: 'PROCEDURE',
-        },
-    ],
+      },
+    },
+  ],
 };
+
+export const buildToolbox = ({includeGamepad}: {includeGamepad: boolean}) => ({
+  kind: 'categoryToolbox',
+  contents: [
+    {
+      kind: 'category',
+      name: 'OpMode',
+      categorystyle: 'events_category',
+      cssConfig: categoryCss('events'),
+      contents: [
+        // Opmode-scoped hat blocks. Each opmode tab starts with a details hat and
+        // an "on start" hat; these let you add an "on start" hat, a setup hat (for
+        // advanced raw-Python setup — motors are registered automatically), and
+        // triggers with any condition.
+        {
+          kind: 'block',
+          type: 'sc_on_start',
+          inputs: {
+            COMMANDS: {
+              block: runForSecondsBlock(),
+            },
+          },
+        },
+        {
+          kind: 'block',
+          type: 'sc_on_setup',
+          inputs: {
+            SETUP: {
+              block: {
+                kind: 'block',
+                type: 'sc_python_setup_line',
+              },
+            },
+          },
+        },
+        {
+          kind: 'block',
+          type: 'sc_trigger',
+          inputs: {
+            CONDITION: {
+              block: sensorGreaterThanBlock(0),
+            },
+            COMMANDS: {
+              block: stopMotorBlock(),
+            },
+          },
+        },
+      ],
+    },
+    {
+      kind: 'category',
+      name: 'Motion',
+      categorystyle: 'motion_category',
+      cssConfig: categoryCss('motion'),
+      contents: [
+        {
+          kind: 'block',
+          type: 'sc_motor_set_power',
+          inputs: {
+            POWER: {
+              shadow: numberShadow(50),
+            },
+          },
+        },
+        runForSecondsBlock(),
+        stopMotorBlock(),
+        {
+          kind: 'block',
+          type: 'sc_motor_set_velocity',
+          inputs: {
+            VELOCITY: {
+              shadow: numberShadow(1200),
+            },
+          },
+        },
+        {
+          kind: 'block',
+          type: 'sc_motor_set_position',
+          inputs: {
+            POSITION: {
+              shadow: numberShadow(2),
+            },
+          },
+        },
+      ],
+    },
+    {
+      kind: 'category',
+      name: 'Control',
+      categorystyle: 'control_category',
+      cssConfig: categoryCss('control'),
+      contents: [
+        {
+          kind: 'block',
+          type: 'sc_wait_seconds',
+          inputs: {
+            SECONDS: {
+              shadow: numberShadow(1),
+            },
+          },
+        },
+        {
+          kind: 'block',
+          type: 'sc_repeat_commands',
+          inputs: {
+            TIMES: {
+              shadow: numberShadow(3),
+            },
+            COMMANDS: {
+              block: runForSecondsBlock(),
+            },
+          },
+        },
+        {
+          kind: 'block',
+          type: 'sc_parallel_commands',
+          inputs: {
+            FIRST: {
+              block: runForSecondsBlock(),
+            },
+            SECOND: {
+              block: runForSecondsBlock(),
+            },
+          },
+        },
+        {
+          kind: 'block',
+          type: 'sc_race_commands',
+          inputs: {
+            FIRST: {
+              block: runForSecondsBlock(),
+            },
+            SECOND: {
+              block: runForSecondsBlock(),
+            },
+          },
+        },
+        {
+          kind: 'block',
+          type: 'sc_wait_until',
+          inputs: {
+            CONDITION: {
+              block: sensorGreaterThanBlock(0),
+            },
+          },
+        },
+      ],
+    },
+    {
+      kind: 'category',
+      name: 'Sensing',
+      categorystyle: 'sensing_category',
+      cssConfig: categoryCss('sensing'),
+      contents: [sensorValueBlock()],
+    },
+    ...(includeGamepad ? [gamepadCategory] : []),
+    {
+      kind: 'category',
+      name: 'Operators',
+      categorystyle: 'operators_category',
+      cssConfig: categoryCss('operators'),
+      contents: [
+        numberShadow(0),
+        {
+          kind: 'block',
+          type: 'math_arithmetic',
+          inputs: {
+            A: {
+              shadow: numberShadow(1),
+            },
+            B: {
+              shadow: numberShadow(1),
+            },
+          },
+        },
+        {
+          kind: 'block',
+          type: 'math_number_property',
+          inputs: {
+            NUMBER_TO_CHECK: {
+              shadow: numberShadow(0),
+            },
+          },
+        },
+        {
+          kind: 'block',
+          type: 'logic_compare',
+        },
+        {
+          kind: 'block',
+          type: 'logic_operation',
+        },
+        {
+          kind: 'block',
+          type: 'logic_boolean',
+        },
+      ],
+    },
+    {
+      kind: 'category',
+      name: 'Variables',
+      categorystyle: 'variables_category',
+      cssConfig: categoryCss('variables'),
+      custom: 'VARIABLE',
+    },
+    {
+      kind: 'category',
+      name: 'My Blocks',
+      categorystyle: 'myblocks_category',
+      cssConfig: categoryCss('myblocks'),
+      custom: 'PROCEDURE',
+    },
+    {
+      kind: 'category',
+      name: 'Extensions',
+      categorystyle: 'advanced_category',
+      cssConfig: categoryCss('advanced'),
+      // Escape hatch: the full generated RobotPy API is reachable here, but only
+      // once a class is loaded as an extension. Nothing generated is in the
+      // toolbox by default — the flyout is built dynamically in extensions.ts.
+      custom: EXTENSIONS_TOOLBOX_CATEGORY,
+    },
+  ],
+});
+
+// Default toolbox (no gamepad category). App.vue swaps in the gamepad variant
+// when the active opmode is a Teleop.
+export const toolbox = buildToolbox({includeGamepad: false});
