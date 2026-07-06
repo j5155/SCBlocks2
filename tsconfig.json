@@ -4,8 +4,8 @@
     "outDir": "dist",
     "declaration": true,
     "declarationMap": true,
-    "module": "ES2015",
-    "moduleResolution": "node",
+    "module": "Node16",
+    "moduleResolution": "node16",
     "target": "ES2015",
     "strict": true
   }
