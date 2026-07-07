@@ -1,5 +1,5 @@
 {
-  "name": "redone-systemcore-blocks-interface",
+  "name": "scblocks2",
   "version": "1.0.0",
   "description": "A sample app using Blockly",
   "main": "index.js",
