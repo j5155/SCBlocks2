@@ -40,10 +40,23 @@ export let toolbox = {
             name: 'Control',
             categorystyle: 'control_category',
             contents: [
-                // TODO wait seconds
                 {
                     kind: 'block',
-                    type: 'controls_repeat_ext',
+                    type: 'control_wait',
+                    inputs: {
+                        DURATION: {
+                            shadow: {
+                                type: 'math_number',
+                                fields: {
+                                    NUM: 5,
+                                },
+                            },
+                        },
+                    },
+                },
+                {
+                    kind: 'block',
+                    type: 'control_repeat',
                     inputs: {
                         TIMES: {
                             shadow: {
@@ -55,14 +68,17 @@ export let toolbox = {
                         },
                     },
                 },
-                // TODO FOREVER
                 {
                     kind: 'block',
-                    type: 'controls_if', // TODO make normal if statement not mutator
+                    type: 'control_forever',
                 },
                 {
                     kind: 'block',
-                    type: 'controls_ifelse',
+                    type: 'control_if',
+                },
+                {
+                    kind: 'block',
+                    type: 'control_if_else',
                 },
                 // TODO WAIT UNTIL
                 {

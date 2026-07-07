@@ -10,6 +10,7 @@ TODO:
 - [ ] Figure out how hardware map assignment should work? Custom GUI screen like spike prime?
 - [ ] CI builds/Github Pages
 - [ ] Messages system? https://discord.com/channels/176186766946992128/368993897495527424/1523725816532570173
+- [ ] Backpack??? 
 
 CONTRIBUTING GUIDE
 No AI code generation beyond single line completion, without discussing it first

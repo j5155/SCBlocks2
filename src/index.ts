@@ -12,13 +12,16 @@ import {forBlock} from './generators/python';
 import {pythonGenerator} from 'blockly/python';
 import {save, load} from './serialization';
 import {toolbox} from './toolbox';
+import * as ControlBlocks from './blocks/control';
+import './blocks/vertical_extensions';
 import {applyScratchBlockPaletteOverrides, scratchTheme} from './blocklyTheme';
 // @ts-ignore
-import './index.css';
+import './index.css'; // TODO FIX
 
 // Register the blocks and generator with Blockly
 applyScratchBlockPaletteOverrides();
 Blockly.common.defineBlocks(blocks);
+Blockly.common.defineBlocks(ControlBlocks);
 Object.assign(pythonGenerator.forBlock, forBlock);
 
 // Set up UI elements and inject Blockly
