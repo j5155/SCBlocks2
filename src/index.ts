@@ -8,8 +8,8 @@ import * as Blockly from 'blockly';
 import { registerContinuousToolbox } from "@blockly/continuous-toolbox";
 
 import {blocks} from './blocks/text';
-import {forBlock} from './generators/javascript';
-import {javascriptGenerator} from 'blockly/javascript';
+import {forBlock} from './generators/python';
+import {pythonGenerator} from 'blockly/python';
 import {save, load} from './serialization';
 import {toolbox} from './toolbox';
 import {applyScratchBlockPaletteOverrides, scratchTheme} from './blocklyTheme';
@@ -19,11 +19,10 @@ import './index.css';
 // Register the blocks and generator with Blockly
 applyScratchBlockPaletteOverrides();
 Blockly.common.defineBlocks(blocks);
-Object.assign(javascriptGenerator.forBlock, forBlock);
+Object.assign(pythonGenerator.forBlock, forBlock);
 
 // Set up UI elements and inject Blockly
 const codeDiv = document.getElementById('generatedCode')?.firstChild;
-const outputDiv = document.getElementById('output');
 const blocklyDiv = document.getElementById('blocklyDiv');
 
 if (!blocklyDiv) {
@@ -44,28 +43,16 @@ const ws = Blockly.inject(blocklyDiv, {
   },
 });
 
-// This function resets the code and output divs, shows the
-// generated code from the workspace, and evals the code.
-// In a real application, you probably shouldn't use `eval`.
-const runCode = () => {
-  const code = javascriptGenerator.workspaceToCode(ws as Blockly.Workspace);
+// This function shows the generated Python code from the workspace.
+const generateCode = () => {
+  const code = pythonGenerator.workspaceToCode(ws as Blockly.Workspace);
   if (codeDiv) codeDiv.textContent = code;
-
-  if (outputDiv) outputDiv.innerHTML = '';
-
-  // Wrap `eval` in a `try/catch` so that any runtime errors are
-  // logged to the console, instead of failing quietly.
-  try {
-    eval(code);
-  } catch (error) {
-    console.log(error);
-  }
 };
 
 if (ws) {
-  // Load the initial state from storage and run the code.
+  // Load the initial state from storage and generate code.
   load(ws);
-  runCode();
+  generateCode();
 
   // Every time the workspace changes state, save the changes to storage.
   ws.addChangeListener((e: Blockly.Events.Abstract) => {
@@ -75,7 +62,7 @@ if (ws) {
     save(ws);
   });
 
-  // Whenever the workspace changes meaningfully, run the code again.
+  // Whenever the workspace changes meaningfully, regenerate the code.
   ws.addChangeListener((e: Blockly.Events.Abstract) => {
     // Don't run the code when the workspace finishes loading; we're
     // already running it once when the application starts.
@@ -87,6 +74,6 @@ if (ws) {
     ) {
       return;
     }
-    runCode();
+    generateCode();
   });
 }
