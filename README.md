@@ -29,7 +29,10 @@ We can consider this after we have a basic workflow working.
 Potential exception: maybe we can consider some support for common FTC things like color sensors or Pinpoint as helpers.
 
 - Third party libraries/extensibility.
+
 This sounds very difficult to implement, and unnecessary in a proof of concept.
+
+- IE support
 
 # Blockers
 
