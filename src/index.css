@@ -27,14 +27,11 @@ code {
   width: 400px;
   flex: 0 0 400px;
   overflow: auto;
-  margin: 1rem;
 }
 
 #generatedCode {
-  height: 50%;
-  background-color: rgb(247, 240, 228);
-}
-
-#output {
-  height: 50%;
+  height: 100%;
+  background-color: rgb(226, 225, 229);
+  padding: 1rem;
+  margin: 0;
 }
