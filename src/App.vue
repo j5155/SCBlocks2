@@ -104,6 +104,8 @@ const loadedExtensions = ref<string[]>([]);
 
 let workspace: Blockly.WorkspaceSvg | null = null;
 let suppressChanges = false;
+let workspaceResizeFrame: number | null = null;
+let workspaceResizeObserver: ResizeObserver | null = null;
 
 const registerBlockly = () => {
   registerDeviceField();
@@ -117,6 +119,14 @@ const registerBlockly = () => {
 const resizeWorkspace = () => {
   if (!workspace) return;
   Blockly.svgResize(workspace);
+};
+
+const scheduleWorkspaceResize = () => {
+  if (workspaceResizeFrame !== null) return;
+  workspaceResizeFrame = window.requestAnimationFrame(() => {
+    workspaceResizeFrame = null;
+    resizeWorkspace();
+  });
 };
 
 // --- Tab / opmode plumbing -------------------------------------------------
@@ -487,12 +497,21 @@ onMounted(() => {
     generateCode();
   });
 
-  window.addEventListener("resize", resizeWorkspace);
-  requestAnimationFrame(resizeWorkspace);
+  workspaceResizeObserver = new ResizeObserver(scheduleWorkspaceResize);
+  workspaceResizeObserver.observe(blocklyDiv.value);
+
+  window.addEventListener("resize", scheduleWorkspaceResize);
+  scheduleWorkspaceResize();
 });
 
 onBeforeUnmount(() => {
-  window.removeEventListener("resize", resizeWorkspace);
+  window.removeEventListener("resize", scheduleWorkspaceResize);
+  workspaceResizeObserver?.disconnect();
+  workspaceResizeObserver = null;
+  if (workspaceResizeFrame !== null) {
+    window.cancelAnimationFrame(workspaceResizeFrame);
+    workspaceResizeFrame = null;
+  }
   workspace?.dispose();
   workspace = null;
 });
