@@ -21,7 +21,16 @@ export let toolbox = {
             kind: 'category',
             name: 'Motors',
             categorystyle: 'motors_category',
-            contents: []
+            contents: [
+                {
+                    kind: 'block',
+                    type: 'spin_motor_for_duration'
+                },
+                {
+                    kind: 'block',
+                    type: 'register_motor'
+                },
+            ]
         },
         {
             kind: 'category',
