@@ -7,6 +7,7 @@ TODO:
 - [ ] Go through toolbox and adjust to match Scratch (Jay started 7/5)
 - [ ] Figure out how motor groups/wrappers should work?
 - [ ] Figure out how hardware map assignment should work? Custom GUI screen like spike prime?
+- [ ] CI builds/Github Pages
 
 
 CONTRIBUTING GUIDE

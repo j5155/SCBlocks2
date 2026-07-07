@@ -140,6 +140,60 @@ export let toolbox = {
                     kind: 'block',
                     type: 'logic_negate',
                 },
+
+                {
+                    kind: 'block',
+                    type: 'text', // TODO make not weird, ideally remove
+                },
+                {
+                    kind: 'block',
+                    type: 'text_join', // TODO make not weird
+                },
+                {
+                    kind: 'block',
+                    type: 'text_length',
+                    inputs: {
+                        VALUE: {
+                            shadow: {
+                                type: 'text',
+                                fields: {
+                                    TEXT: 'abc',
+                                },
+                            },
+                        },
+                    },
+                },
+                {
+                    kind: 'block',
+                    type: 'text_indexOf', // TODO make not cooked, should we keep this? scratch has no equivalent
+                    inputs: {
+                        VALUE: {
+                            block: {
+                                type: 'variables_get',
+                            },
+                        },
+                        FIND: {
+                            shadow: {
+                                type: 'text',
+                                fields: {
+                                    TEXT: 'abc',
+                                },
+                            },
+                        },
+                    },
+                },
+                {
+                    kind: 'block',
+                    type: 'text_charAt', // TODO make not cooked
+                    inputs: {
+                        VALUE: {
+                            block: {
+                                type: 'variables_get',
+                            },
+                        },
+                    },
+                },
+                // TODO "text contains" boolean
                 {
                     kind: 'block',
                     type: 'math_single',
@@ -612,7 +666,7 @@ export const oldtoolbox = {
             kind: 'category',
             name: 'Text',
             categorystyle: 'text_category',
-            contents: [ // TODO ADD STARTING HERE 7/5/26
+            contents: [
                 {
                     kind: 'block',
                     type: 'text',
@@ -800,7 +854,7 @@ export const oldtoolbox = {
             kind: 'category',
             name: 'Lists',
             categorystyle: 'list_category',
-            contents: [
+            contents: [ // TODO ADD STARTING HERE 7/6/26
                 {
                     kind: 'block',
                     type: 'lists_create_with',
