@@ -4,11 +4,12 @@ TODO:
 - [ ] Figure out web interface/deploy plan
 - [X] Change theme to match Scratch by swapping renderer to zelos
 - [ ] Start creating blocks for wpilib functions
-- [ ] Go through toolbox and adjust to match Scratch (Jay started 7/5)
+- [X] Go through toolbox and adjust to match Scratch
+- [ ] Adjust toolbox and fix issues with buitin Blockly blocks
 - [ ] Figure out how motor groups/wrappers should work?
 - [ ] Figure out how hardware map assignment should work? Custom GUI screen like spike prime?
 - [ ] CI builds/Github Pages
-
+- [ ] Messages system? https://discord.com/channels/176186766946992128/368993897495527424/1523725816532570173
 
 CONTRIBUTING GUIDE
 No AI code generation beyond single line completion, without discussing it first

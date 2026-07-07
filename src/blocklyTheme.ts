@@ -7,10 +7,15 @@
 import * as Blockly from 'blockly';
 
 const scratchPalette = {
-  motion: {
+  motors: {
     primary: '#4C97FF',
     secondary: '#4280D7',
     tertiary: '#3373CC',
+  },
+  movement: { // Ripped from Spike Prime
+    primary: '#FF4CCB',
+    secondary: '#C7038E',
+    tertiary: '#B02989'
   },
   looks: {
     primary: '#9966FF',
@@ -73,7 +78,8 @@ export const scratchTheme = Blockly.Theme.defineTheme('scratch', {
   name: 'scratch',
   base: Blockly.Themes.Classic,
   blockStyles: {
-    motion_blocks: blockStyle(scratchPalette.motion),
+    motors_blocks: blockStyle(scratchPalette.motors),
+    movement_blocks: blockStyle(scratchPalette.movement),
     looks_blocks: blockStyle(scratchPalette.looks),
     sound_blocks: blockStyle(scratchPalette.sound),
     event_blocks: blockStyle(scratchPalette.events),
@@ -93,7 +99,8 @@ export const scratchTheme = Blockly.Theme.defineTheme('scratch', {
     colour_blocks: blockStyle(scratchPalette.looks),
   },
   categoryStyles: {
-    motion_category: {colour: scratchPalette.motion.primary},
+    motors_category: {colour: scratchPalette.motors.primary},
+    movement_category: {colour: scratchPalette.movement.primary},
     looks_category: {colour: scratchPalette.looks.primary},
     sound_category: {colour: scratchPalette.sound.primary},
     events_category: {colour: scratchPalette.events.primary},
