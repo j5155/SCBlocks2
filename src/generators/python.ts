@@ -5,15 +5,27 @@
  */
 
 import * as Blockly from 'blockly/core';
-import {Order, type PythonGenerator} from 'blockly/python';
+import {Order, pythonGenerator, type PythonGenerator} from 'blockly/python';
 import {getA301Method} from '../generated/a301';
 import {
   getDevice,
   getDevices,
   normalizeMovementMotorsConfig,
+  parseMotorGroupConfig,
   parseMovementMotorsConfig,
   type MovementMotorsConfig,
 } from '../devices';
+import {
+  getMechanism,
+  getMechanisms,
+  mechanismCommandNames,
+  type Mechanism,
+} from '../mechanisms';
+import {getRobotMode} from '../robotMode';
+import {
+  getExtensionInstances,
+  type ExtensionInstance,
+} from '../extensionInstances';
 
 // Export all the code generators for our custom blocks,
 // but don't register them with Blockly yet.
@@ -22,7 +34,10 @@ export const forBlock = Object.create(null);
 
 type GeneratorDefinitions = {definitions_: Record<string, string>};
 
-const registerImport = (generator: PythonGenerator, moduleName: string) => {
+export const registerPythonImport = (
+  generator: PythonGenerator,
+  moduleName: string,
+) => {
   (generator as unknown as GeneratorDefinitions).definitions_[
     `import_${moduleName}`
   ] = `import ${moduleName}`;
@@ -66,7 +81,7 @@ const pythonKeywords = new Set([
   'yield',
 ]);
 
-const safePythonIdentifier = (value: string | null, fallback: string) => {
+export const safePythonIdentifier = (value: string | null, fallback: string) => {
   const cleaned = (value || fallback)
     .trim()
     .replace(/\W+/g, '_')
@@ -91,6 +106,25 @@ const deviceName = (block: Blockly.Block, _generator: PythonGenerator) =>
 const deviceReference = (block: Blockly.Block, generator: PythonGenerator) =>
   `self.${safePythonIdentifier(deviceName(block, generator), 'drive_motor')}`;
 
+// A group inside a subsystem may only reference its owned motors. The field
+// keeps an out-of-scope selection visible so the student can remove it, while
+// generation omits it instead of producing a reference the subsystem lacks.
+let generatingSubsystemMotorIds: ReadonlySet<string> | null = null;
+
+const motorGroupExpression = (block: Blockly.Block) => {
+  const motorIds = parseMotorGroupConfig(block.getFieldValue('MOTORS'));
+  const motors = motorIds
+    .filter(
+      (id) =>
+        generatingSubsystemMotorIds === null ||
+        generatingSubsystemMotorIds.has(id),
+    )
+    .map((id) => getDevice(id))
+    .filter((device): device is NonNullable<typeof device> => Boolean(device))
+    .map((device) => `self.${safePythonIdentifier(device.name, 'motor')}`);
+  return motors.length === 1 ? `(${motors[0]},)` : `(${motors.join(', ')})`;
+};
+
 const valueToCode = (
   block: Blockly.Block,
   generator: PythonGenerator,
@@ -103,6 +137,20 @@ const compactStatementLines = (code: string) =>
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean);
+
+// Blockly indents every statement input once. Remove that shared first level
+// before inserting setup code into __init__, but retain deeper indentation for
+// nested Python control flow such as sc_if.
+const normalizeStatementIndentation = (code: string) => {
+  const lines = code.split('\n');
+  const firstContentLine = lines.find((line) => line.trim());
+  if (!firstContentLine) return '';
+  const baseIndent = firstContentLine.match(/^\s*/)?.[0].length ?? 0;
+  return lines
+    .map((line) => (line.trim() ? line.slice(baseIndent) : ''))
+    .join('\n')
+    .replace(/\s+$/, '');
+};
 
 const indentLines = (lines: string[], spaces: number) => {
   const indent = ' '.repeat(spaces);
@@ -128,6 +176,7 @@ const percentToThrottle = (power: string) =>
 // lambda — matching the hand-written opmode style. The registry is reset at the
 // start of every generateOpmodeClass() call.
 let blockMethodBodies: string[] = [];
+let generatingSubsystemCommand = false;
 
 const resetBlockMethods = () => {
   blockMethodBodies = [];
@@ -140,8 +189,18 @@ const registerBlockMethod = (statement: string): string => {
 };
 
 // An InstantCommand whose action is hoisted into a block_N method.
-export const instantCommandExpr = (pythonCall: string) =>
-  `InstantCommand(${registerBlockMethod(pythonCall)})`;
+export const instantCommandExpr = (
+  pythonCall: string,
+  requirement?: string,
+) => {
+  // Subsystem command methods are already methods on their SubsystemBase.
+  // Keep their actions inline so they call the subsystem's owned motors and
+  // reserve that subsystem instead of emitting OpMode-only block_N methods.
+  if (generatingSubsystemCommand) {
+    return `InstantCommand(lambda: ${pythonCall}, ${requirement || 'self'})`;
+  }
+  return `InstantCommand(${registerBlockMethod(pythonCall)}${requirement ? `, ${requirement}` : ''})`;
+};
 
 const instantCommand = (pythonCall: string) =>
   `${instantCommandExpr(pythonCall)},\n`;
@@ -176,6 +235,53 @@ const commandGroupExpression = (commands: string[]) =>
     ? `SequentialCommandGroup(${commands.map(stripCommandComma).join(', ')})`
     : 'SequentialCommandGroup()';
 
+const isSetupControlFlow = (block: Blockly.Block) =>
+  block.getRootBlock().type === 'sc_on_setup';
+
+const pythonIfStatement = (block: Blockly.Block, generator: PythonGenerator) => {
+  let code = '';
+  let index = 0;
+  while (block.getInput(`IF${index}`)) {
+    const condition = valueToCode(block, generator, `IF${index}`, 'False');
+    const branch =
+      generator.statementToCode(block, `DO${index}`) || `${generator.INDENT}pass\n`;
+    code += `${index ? 'elif' : 'if'} ${condition}:\n${branch}`;
+    index += 1;
+  }
+
+  if (block.getInput('ELSE')) {
+    const branch =
+      generator.statementToCode(block, 'ELSE') || `${generator.INDENT}pass\n`;
+    code += `else:\n${branch}`;
+  }
+
+  return code;
+};
+
+const conditionalCommandExpression = (
+  block: Blockly.Block,
+  generator: PythonGenerator,
+) => {
+  let otherwise = commandGroupExpression(
+    block.getInput('ELSE')
+      ? commandLinesForStatement(block, generator, 'ELSE')
+      : [],
+  );
+  let index = 0;
+  while (block.getInput(`IF${index}`)) index += 1;
+
+  while (index > 0) {
+    index -= 1;
+    const condition = valueToCode(block, generator, `IF${index}`, 'False');
+    const whenTrue = commandGroupExpression(
+      commandLinesForStatement(block, generator, `DO${index}`),
+    );
+    otherwise = `ConditionalCommand(${whenTrue}, ${otherwise}, lambda: ${condition})`;
+  }
+
+  return otherwise;
+};
+
 // The opmode's main command, formatted across multiple lines like the
 // hand-written style (one command per line).
 const mainCommandExpression = (commands: string[]) => {
@@ -209,6 +315,138 @@ const pascalCaseIdentifier = (value: string | null, fallback: string) => {
   return safe || fallback;
 };
 
+const mechanismPythonNames = () => {
+  const names = new Map<string, string>();
+  const used = new Set<string>();
+  for (const mechanism of getMechanisms()) {
+    const base = safePythonIdentifier(mechanism.name, 'mechanism');
+    let name = base;
+    let suffix = 2;
+    while (used.has(name)) name = `${base}_${suffix++}`;
+    used.add(name);
+    names.set(mechanism.id, name);
+  }
+  return names;
+};
+
+const mechanismClassName = (name: string) =>
+  `${pascalCaseIdentifier(name, 'Mechanism')}Subsystem`;
+
+const subsystemCommandMethodName = (name: string) =>
+  `command_${safePythonIdentifier(name, 'command')}`;
+
+const mechanismDevices = (mechanism: Mechanism) =>
+  mechanism.motorIds
+    .map((id) => getDevice(id))
+    .filter((device): device is NonNullable<typeof device> => Boolean(device));
+
+const extensionInstancePythonNames = () => {
+  const names = new Map<string, string>();
+  const used = new Set<string>();
+  for (const instance of getExtensionInstances()) {
+    const base = safePythonIdentifier(instance.name, 'object');
+    let name = base;
+    let suffix = 2;
+    while (used.has(name)) name = `${base}_${suffix++}`;
+    used.add(name);
+    names.set(instance.id, name);
+  }
+  return names;
+};
+
+const extensionInstanceClassExpression = (instance: ExtensionInstance) =>
+  instance.className;
+
+export const extensionInstanceReference = (instance: ExtensionInstance) =>
+  `self.${extensionInstancePythonNames().get(instance.id) || safePythonIdentifier(instance.name, 'object')}`;
+
+const subsystemEventStacks = (mechanism: Mechanism) => {
+  const workspace = new Blockly.Workspace();
+  const commandStacks = new Map<string, string[]>();
+  let startCommands: string[] = [];
+  let drivetrain: DrivetrainConfig | null = null;
+  const previousGeneratingSubsystemCommand = generatingSubsystemCommand;
+  const previousGeneratingSubsystemMotorIds = generatingSubsystemMotorIds;
+  generatingSubsystemCommand = true;
+  generatingSubsystemMotorIds = new Set(mechanism.motorIds);
+  try {
+    Blockly.serialization.workspaces.load(mechanism.state, workspace);
+    pythonGenerator.init(workspace);
+    if (movementDriveNeeded(workspace)) {
+      drivetrain = movementDrivetrainConfig(workspace);
+    }
+    for (const hat of workspace.getBlocksByType('sc_subsystem_on_start', false)) {
+      startCommands.push(...commandLinesForNext(hat, pythonGenerator));
+    }
+    for (const hat of workspace.getBlocksByType('sc_subsystem_on_command', false)) {
+      const command = (hat.getFieldValue('COMMAND') || '').trim();
+      if (command && !commandStacks.has(command)) {
+        commandStacks.set(command, commandLinesForNext(hat, pythonGenerator));
+      }
+    }
+  } catch (error) {
+    console.warn(`Skipping invalid subsystem workspace for ${mechanism.name}:`, error);
+  } finally {
+    generatingSubsystemCommand = previousGeneratingSubsystemCommand;
+    generatingSubsystemMotorIds = previousGeneratingSubsystemMotorIds;
+    workspace.dispose();
+  }
+  return {startCommands, commandStacks, drivetrain};
+};
+
+/**
+ * Project-level commands2 subsystem classes. Advanced mode gives every
+ * subsystem its own Scratch-style event workspace; its command hats become
+ * reusable Command factories on this class.
+ */
+export const generateMechanismDefinitions = () => {
+  if (getRobotMode() !== 'advanced') return '';
+  const definitions: string[] = [];
+  const names = mechanismPythonNames();
+  for (const mechanism of getMechanisms()) {
+    const events = subsystemEventStacks(mechanism);
+    const motors = mechanismDevices(mechanism);
+    const motorReferences = motors.map(
+      (motor) => `self.${safePythonIdentifier(motor.name, 'motor')}`,
+    );
+    definitions.push(
+      `class ${mechanismClassName(names.get(mechanism.id) || mechanism.name)}(SubsystemBase):`,
+      '    def __init__(self):',
+      '        super().__init__()',
+      ...motors.map(
+        (motor) =>
+          `        self.${safePythonIdentifier(motor.name, 'motor')} = A301(${motor.deviceId}, ${motor.bus})`,
+      ),
+      `        self._motors = [${motorReferences.join(', ')}]`,
+      ...(events.drivetrain ? drivetrainInitLines(events.drivetrain) : []),
+      '',
+      '    def set_power(self, power):',
+      '        for motor in self._motors:',
+      '            motor.setThrottle(power)',
+      '',
+      '    def stop(self):',
+      '        self.set_power(0)',
+      '',
+      '    def set_motor_group_power(self, motors, power):',
+      '        for motor in motors:',
+      '            motor.setThrottle(power)',
+      '',
+      '    def on_start(self):',
+      `        return ${commandGroupExpression(events.startCommands)}`,
+    );
+    for (const command of mechanismCommandNames(mechanism)) {
+      const commands = events.commandStacks.get(command) || [];
+      definitions.push(
+        '',
+        `    def ${subsystemCommandMethodName(command)}(self):`,
+        `        return ${commandGroupExpression(commands)}`,
+      );
+    }
+    definitions.push('');
+  }
+  return definitions.join('\n').replace(/\s+$/, '');
+};
+
 const OPMODE_TYPE_TO_DECORATOR: Record<string, string> = {
   Teleop: 'teleop',
   Auto: 'autonomous',
@@ -227,7 +465,10 @@ forBlock['sc_rev_color_sensor_proximity_trigger'] = () => '';
 forBlock['sc_wpilib_digital_input_trigger'] = () => '';
 forBlock['sc_wpilib_analog_input_trigger'] = () => '';
 forBlock['sc_wpilib_encoder_trigger'] = () => '';
+forBlock['sc_wpilib_imu_trigger'] = () => '';
 forBlock['sc_movement_motors'] = () => '';
+forBlock['sc_subsystem_on_start'] = () => '';
+forBlock['sc_subsystem_on_command'] = () => '';
 
 const GAMEPAD_BLOCK_TYPES = [
   'sc_gamepad_button',
@@ -403,6 +644,23 @@ const analogAccelerometerReference = (block: Blockly.Block) =>
 const analogPotentiometerReference = (block: Blockly.Block) =>
   sensorReference('analog_potentiometer', intField(block, 'CHANNEL', 0));
 
+// The SystemCore onboard IMU is a singleton; every IMU block shares self.imu.
+const IMU_REFERENCE = 'self.imu';
+
+// WPILib reports IMU angles in radians; students expect degrees. Shared by the
+// value read block and the heading trigger.
+const imuHeadingDegrees = (generator: PythonGenerator) => {
+  registerPythonImport(generator, 'math');
+  return `math.degrees(${IMU_REFERENCE}.getYaw())`;
+};
+
+const digitalOutputReference = (block: Blockly.Block) =>
+  sensorReference('digital_output', intField(block, 'CHANNEL', 0));
+
+// A Python string literal for a user-entered SmartDashboard key.
+const pythonStringLiteral = (value: string | null) =>
+  `"${(value || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+
 const i2cPortKey = (block: Blockly.Block) =>
   block.getFieldValue('PORT') === 'MXP' ? 'mxp' : 'onboard';
 
@@ -517,6 +775,26 @@ const sensorInitLines = (
       `wpilib.AnalogPotentiometer(${channel})`,
     );
   }
+  // The onboard IMU is a singleton — one object no matter how many blocks use it.
+  for (const type of [
+    'sc_wpilib_imu_value',
+    'sc_wpilib_imu_reset',
+    'sc_wpilib_imu_trigger',
+  ]) {
+    if (workspace.getBlocksByType(type, false).length) {
+      add(
+        'imu',
+        'wpilib.OnboardIMU(wpilib.OnboardIMU.MountOrientation.FLAT)',
+      );
+    }
+  }
+  for (const block of workspace.getBlocksByType('sc_wpilib_digital_output_set', false)) {
+    const channel = intField(block, 'CHANNEL', 0);
+    add(
+      sensorObjectName('digital_output', channel),
+      `wpilib.DigitalOutput(${channel})`,
+    );
+  }
   for (const type of [
     'sc_rev_color_sensor_value',
     'sc_rev_color_sensor_status',
@@ -525,7 +803,7 @@ const sensorInitLines = (
     'sc_rev_color_sensor_proximity_trigger',
   ]) {
     for (const block of workspace.getBlocksByType(type, false)) {
-      registerImport(generator, 'rev');
+      registerPythonImport(generator, 'rev');
       const key = i2cPortKey(block);
       add(
         `rev_color_sensor_${key}`,
@@ -565,6 +843,7 @@ const triggerBlocksInWorkspace = (workspace: Blockly.Workspace) => [
   ...workspace.getBlocksByType('sc_wpilib_digital_input_trigger', false),
   ...workspace.getBlocksByType('sc_wpilib_analog_input_trigger', false),
   ...workspace.getBlocksByType('sc_wpilib_encoder_trigger', false),
+  ...workspace.getBlocksByType('sc_wpilib_imu_trigger', false),
 ];
 
 const triggerConditionExpression = (
@@ -589,6 +868,10 @@ const triggerConditionExpression = (
     const threshold = valueToCode(trigger, generator, 'THRESHOLD', '0');
     return `${encoderReference(trigger)}.${encoderMethod(trigger)}() >= (${threshold})`;
   }
+  if (trigger.type === 'sc_wpilib_imu_trigger') {
+    const threshold = valueToCode(trigger, generator, 'THRESHOLD', '0');
+    return `${imuHeadingDegrees(generator)} >= (${threshold})`;
+  }
   return valueToCode(trigger, generator, 'CONDITION', 'False');
 };
 
@@ -610,12 +893,14 @@ export const generateOpmodeClass = (
   const description = (details?.getFieldValue('DESCRIPTION') || '').trim();
   const className = pascalCaseIdentifier(name, 'MyOpMode');
 
-  const setupLines: string[] = [];
+  const setupSections: string[] = [];
   for (const hat of workspace.getBlocksByType('sc_on_setup', false)) {
-    setupLines.push(
-      ...compactStatementLines(generator.statementToCode(hat, 'SETUP')),
+    const setupCode = normalizeStatementIndentation(
+      generator.statementToCode(hat, 'SETUP'),
     );
+    if (setupCode) setupSections.push(setupCode);
   }
+  const setupCode = setupSections.join('\n');
 
   const triggerLines = buildTriggerLines(
     triggerBlocksInWorkspace(workspace),
@@ -640,16 +925,39 @@ export const generateOpmodeClass = (
     );
   }
   initBody.push(...sensorInitLines(workspace, generator));
-  // Every motor in the project registry is constructed automatically at the top
-  // of __init__(); there is no per-opmode "register motor" block anymore.
-  for (const device of getDevices()) {
-    const motor = safePythonIdentifier(device.name, 'drive_motor');
-    initBody.push(`        self.${motor} = A301(${device.deviceId}, ${device.bus})`);
+  // Simple mode exposes motors directly to OpMode blocks. Advanced mode moves
+  // construction into the owning subsystem class instead.
+  if (getRobotMode() === 'simple') {
+    for (const device of getDevices()) {
+      const motor = safePythonIdentifier(device.name, 'drive_motor');
+      initBody.push(`        self.${motor} = A301(${device.deviceId}, ${device.bus})`);
+    }
+  }
+  const extensionInstanceNames = extensionInstancePythonNames();
+  for (const instance of getExtensionInstances()) {
+    const name = extensionInstanceNames.get(instance.id) || 'object';
+    const rootModule = instance.className.split('.')[0];
+    if (rootModule) registerPythonImport(generator, rootModule);
+    initBody.push(
+      `        self.${name} = ${extensionInstanceClassExpression(instance)}(${instance.args})`,
+    );
+  }
+  if (getRobotMode() === 'advanced') {
+    const mechanismNames = mechanismPythonNames();
+    for (const mechanism of getMechanisms()) {
+      const name = mechanismNames.get(mechanism.id) || 'mechanism';
+      initBody.push(
+        `        self.${name} = ${mechanismClassName(name)}()`,
+      );
+      // Each subsystem's "when this subsystem starts" event runs beside the
+      // OpMode's own start hats, just like separate Scratch event scripts.
+      startCommandStacks.push([`self.${name}.on_start()`]);
+    }
   }
   if (movementDriveNeeded(workspace)) {
     initBody.push(...drivetrainInitLines(movementDrivetrainConfig(workspace)));
   }
-  if (setupLines.length) initBody.push(indentLines(setupLines, 8));
+  if (setupCode) initBody.push(indentCode(setupCode, 8));
   initBody.push('        self.main_command: Command | None = None');
 
   const startBody: string[] = [];
@@ -727,6 +1035,70 @@ forBlock['sc_motor_set_position'] = function (
 ) {
   const position = valueToCode(block, generator, 'POSITION', '0');
   return instantCommand(`${deviceReference(block, generator)}.setPosition(${position})`);
+};
+
+forBlock['sc_motor_group'] = function (block: Blockly.Block) {
+  return [motorGroupExpression(block), Order.ATOMIC];
+};
+
+const motorGroupPowerCommand = (
+  block: Blockly.Block,
+  generator: PythonGenerator,
+  power: string,
+) => {
+  const group = valueToCode(block, generator, 'GROUP', '()');
+  if (generatingSubsystemCommand) {
+    return `InstantCommand(lambda: self.set_motor_group_power(${group}, ${power}), self),\n`;
+  }
+  const action = [
+    `for motor in ${group}:`,
+    `    motor.setThrottle(${power})`,
+  ].join('\n');
+  return `InstantCommand(${registerBlockMethod(action)}),\n`;
+};
+
+forBlock['sc_motor_group_set_power'] = function (
+  block: Blockly.Block,
+  generator: PythonGenerator,
+) {
+  const power = valueToCode(block, generator, 'POWER', '0');
+  return motorGroupPowerCommand(block, generator, percentToThrottle(power));
+};
+
+forBlock['sc_motor_group_stop'] = function (
+  block: Blockly.Block,
+  generator: PythonGenerator,
+) {
+  return motorGroupPowerCommand(block, generator, '0');
+};
+
+forBlock['sc_mechanism_set_power'] = function (
+  block: Blockly.Block,
+  generator: PythonGenerator,
+) {
+  const mechanism = getMechanism(block.getFieldValue('MECHANISM'));
+  if (!mechanism) return instantCommand('pass');
+  const name = mechanismPythonNames().get(mechanism.id) || 'mechanism';
+  const power = valueToCode(block, generator, 'POWER', '0');
+  return `${instantCommandExpr(
+    `self.${name}.set_power(${percentToThrottle(power)})`,
+    `self.${name}`,
+  )},\n`;
+};
+
+forBlock['sc_mechanism_stop'] = function (block: Blockly.Block) {
+  const mechanism = getMechanism(block.getFieldValue('MECHANISM'));
+  if (!mechanism) return instantCommand('pass');
+  const name = mechanismPythonNames().get(mechanism.id) || 'mechanism';
+  return `${instantCommandExpr(`self.${name}.stop()`, `self.${name}`)},\n`;
+};
+
+forBlock['sc_mechanism_run_command'] = function (block: Blockly.Block) {
+  const mechanism = getMechanism(block.getFieldValue('MECHANISM'));
+  const command = (block.getFieldValue('COMMAND') || '').trim();
+  if (!mechanism || !command) return instantCommand('pass');
+  const name = mechanismPythonNames().get(mechanism.id) || 'mechanism';
+  return `self.${name}.${subsystemCommandMethodName(command)}(),\n`;
 };
 
 forBlock['sc_drivetrain_arcade_drive'] = function (
@@ -820,6 +1192,16 @@ forBlock['sc_wait_until'] = function (
   return `WaitUntilCommand(lambda: ${condition}),\n`;
 };
 
+forBlock['sc_if'] = function (
+  block: Blockly.Block,
+  generator: PythonGenerator,
+) {
+  if (isSetupControlFlow(block)) {
+    return pythonIfStatement(block, generator);
+  }
+  return `${conditionalCommandExpression(block, generator)},\n`;
+};
+
 forBlock['sc_a301_sensor_value'] = function (
   block: Blockly.Block,
   generator: PythonGenerator,
@@ -906,6 +1288,53 @@ forBlock['sc_wpilib_analog_potentiometer_value'] = function (
   block: Blockly.Block,
 ) {
   return [`${analogPotentiometerReference(block)}.get()`, Order.FUNCTION_CALL];
+};
+
+forBlock['sc_wpilib_imu_value'] = function (
+  block: Blockly.Block,
+  generator: PythonGenerator,
+) {
+  const reading = block.getFieldValue('READING');
+  if (reading === 'TURN_RATE') {
+    registerPythonImport(generator, 'math');
+    return [`math.degrees(${IMU_REFERENCE}.getGyroRateZ())`, Order.FUNCTION_CALL];
+  }
+  const accelAxis: Record<string, string> = {
+    ACCEL_X: 'getAccelX',
+    ACCEL_Y: 'getAccelY',
+    ACCEL_Z: 'getAccelZ',
+  };
+  if (accelAxis[reading]) {
+    return [`${IMU_REFERENCE}.${accelAxis[reading]}()`, Order.FUNCTION_CALL];
+  }
+  return [imuHeadingDegrees(generator), Order.FUNCTION_CALL];
+};
+
+forBlock['sc_wpilib_imu_reset'] = function () {
+  return instantCommand(`${IMU_REFERENCE}.resetYaw()`);
+};
+
+forBlock['sc_wpilib_match_time'] = function () {
+  return ['wpilib.Timer.getMatchTime()', Order.FUNCTION_CALL];
+};
+
+forBlock['sc_wpilib_digital_output_set'] = function (block: Blockly.Block) {
+  const value = block.getFieldValue('STATE') === 'OFF' ? 'False' : 'True';
+  return instantCommand(`${digitalOutputReference(block)}.set(${value})`);
+};
+
+forBlock['sc_wpilib_smartdashboard_put'] = function (
+  block: Blockly.Block,
+  generator: PythonGenerator,
+) {
+  const key = pythonStringLiteral(block.getFieldValue('KEY'));
+  const value = valueToCode(block, generator, 'VALUE', '0');
+  return instantCommand(`wpilib.SmartDashboard.putNumber(${key}, ${value})`);
+};
+
+forBlock['sc_wpilib_smartdashboard_get'] = function (block: Blockly.Block) {
+  const key = pythonStringLiteral(block.getFieldValue('KEY'));
+  return [`wpilib.SmartDashboard.getNumber(${key}, 0)`, Order.FUNCTION_CALL];
 };
 
 forBlock['sc_rev_color_sensor_value'] = function (block: Blockly.Block) {

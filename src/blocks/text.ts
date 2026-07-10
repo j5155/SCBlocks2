@@ -12,7 +12,8 @@ import {
   type FieldColourValidator,
 } from "@blockly/field-colour";
 import { a301MethodOptions, A301_VALUE_METHODS } from "../generated/a301";
-import { deviceField, movementMotorsField } from "../devices";
+import { deviceField, motorGroupField, movementMotorsField } from "../devices";
+import { mechanismCommandField, mechanismField } from "../mechanisms";
 
 const normalizeColour = (value: unknown) => {
   const named: Record<string, string> = {
@@ -369,6 +370,7 @@ const controlColour = "#FFAB19";
 const sensingColour = "#5CB1D6";
 const operatorsColour = "#59C059";
 const wpilibColour = "#FF4C4C";
+const wpilibOutputsColour = "#0FBC9B";
 const revColorSensorColour = "#FF5418";
 const advancedColour = "#5C81A6";
 
@@ -446,7 +448,7 @@ const scOpmodeDetails = {
 
 const scOnSetup = {
   type: "sc_on_setup",
-  message0: "set up robot",
+  message0: "set up this OpMode",
   message1: "%1",
   args1: [
     {
@@ -456,7 +458,8 @@ const scOnSetup = {
     },
   ],
   colour: motionColour,
-  tooltip: "Register devices once when this OpMode starts.",
+  tooltip:
+    "Runs direct setup lines while this OpMode is constructed. Motors and mechanisms belong in Robot Setup instead.",
   helpUrl: "",
 };
 
@@ -466,7 +469,8 @@ const scOnStart = {
   hat: true,
   nextStatement: "Command",
   colour: eventsColour,
-  tooltip: "Runs the commands attached below when the OpMode starts.",
+  tooltip:
+    "Runs the commands attached below when the OpMode starts. Separate start hats run in parallel.",
   helpUrl: "",
 };
 
@@ -582,6 +586,132 @@ const scMotorSetPosition = {
   nextStatement: "Command",
   colour: motionColour,
   tooltip: "Asks the A301 to drive to a position setpoint.",
+  helpUrl: "",
+};
+
+// Mechanisms are project-level commands2 subsystems. They are configured in
+// Robot Setup instead of being re-created in every OpMode, then these blocks
+// create commands that require the selected subsystem.
+const scMechanismSetPower = {
+  type: "sc_mechanism_set_power",
+  message0: "set mechanism %1 power to %2 %",
+  args0: [
+    mechanismField(),
+    {
+      type: "input_value",
+      name: "POWER",
+      check: "Number",
+    },
+  ],
+  previousStatement: "Command",
+  nextStatement: "Command",
+  colour: movementColour,
+  tooltip:
+    "Sets every motor in this commands2 subsystem. The command reserves the mechanism while it runs.",
+  helpUrl: "",
+};
+
+const scMechanismStop = {
+  type: "sc_mechanism_stop",
+  message0: "stop mechanism %1",
+  args0: [mechanismField()],
+  previousStatement: "Command",
+  nextStatement: "Command",
+  colour: movementColour,
+  tooltip: "Stops every motor in this commands2 subsystem.",
+  helpUrl: "",
+};
+
+// Advanced subsystem workspaces use Scratch-style event hats. These blocks are
+// only shown while editing a subsystem; the command body is later exposed to
+// OpModes through the matching “run subsystem command” block.
+const scSubsystemOnStart = {
+  type: "sc_subsystem_on_start",
+  message0: "when this subsystem starts",
+  hat: true,
+  nextStatement: "Command",
+  colour: eventsColour,
+  tooltip: "Runs when the owning OpMode starts.",
+  helpUrl: "",
+};
+
+const scSubsystemOnCommand = {
+  type: "sc_subsystem_on_command",
+  message0: "when I'm told to %1",
+  args0: [
+    {
+      type: "field_input",
+      name: "COMMAND",
+      text: "run",
+      spellcheck: false,
+    },
+  ],
+  hat: true,
+  nextStatement: "Command",
+  colour: eventsColour,
+  tooltip:
+    "Defines a reusable subsystem command. It becomes selectable in an OpMode's Subsystems drawer.",
+  helpUrl: "",
+};
+
+const scMotorGroup = {
+  type: "sc_motor_group",
+  message0: "motor group %1",
+  args0: [motorGroupField()],
+  output: "MotorGroup",
+  colour: motionColour,
+  tooltip:
+    "Choose the motors that should receive the same command. Click the group to edit it.",
+  helpUrl: "",
+};
+
+const scMotorGroupSetPower = {
+  type: "sc_motor_group_set_power",
+  message0: "set motor group %1 power to %2 %",
+  args0: [
+    {
+      type: "input_value",
+      name: "GROUP",
+      check: "MotorGroup",
+    },
+    {
+      type: "input_value",
+      name: "POWER",
+      check: "Number",
+    },
+  ],
+  previousStatement: "Command",
+  nextStatement: "Command",
+  colour: motionColour,
+  tooltip: "Sets the same throttle for every motor in an explicit group.",
+  helpUrl: "",
+};
+
+const scMotorGroupStop = {
+  type: "sc_motor_group_stop",
+  message0: "stop motor group %1",
+  args0: [
+    {
+      type: "input_value",
+      name: "GROUP",
+      check: "MotorGroup",
+    },
+  ],
+  previousStatement: "Command",
+  nextStatement: "Command",
+  colour: motionColour,
+  tooltip: "Stops every motor in an explicit group.",
+  helpUrl: "",
+};
+
+const scMechanismRunCommand = {
+  type: "sc_mechanism_run_command",
+  message0: "tell %1 to %2",
+  args0: [mechanismField(), mechanismCommandField()],
+  previousStatement: "Command",
+  nextStatement: "Command",
+  colour: movementColour,
+  tooltip: "Schedules a command defined in this subsystem's event workspace.",
   helpUrl: "",
 };
 
@@ -796,6 +926,37 @@ const scWaitUntil = {
   nextStatement: "Command",
   colour: controlColour,
   tooltip: "Waits inside the command sequence until a condition is true.",
+  helpUrl: "",
+};
+
+// The standard Blockly if mutator gives this block optional else-if and else
+// branches. Its statement connections deliberately accept either context: in a
+// command stack it becomes a Commands2 ConditionalCommand, while inside an
+// OpMode setup hat it is ordinary Python control flow.
+const scIf = {
+  type: "sc_if",
+  message0: "if %1",
+  args0: [
+    {
+      type: "input_value",
+      name: "IF0",
+      check: "Boolean",
+    },
+  ],
+  message1: "then %1",
+  args1: [
+    {
+      type: "input_statement",
+      name: "DO0",
+      check: ["Command", "Setup"],
+    },
+  ],
+  previousStatement: ["Command", "Setup"],
+  nextStatement: ["Command", "Setup"],
+  style: "control_blocks",
+  mutator: "controls_if_mutator",
+  tooltip:
+    "In a command stack, chooses a Commands2 command group. In OpMode setup, generates a normal Python if statement.",
   helpUrl: "",
 };
 
@@ -1066,6 +1227,147 @@ const scWpilibEncoderTrigger = {
   nextStatement: "Command",
   colour: wpilibColour,
   tooltip: "Runs commands when a wpilib.Encoder reading reaches the threshold.",
+  helpUrl: "",
+};
+
+// --- Onboard IMU (gyro / accelerometer) --------------------------------------
+// The SystemCore has a single built-in IMU (wpilib.OnboardIMU). One shared
+// object is created in __init__ whenever any IMU block is used. Angles are
+// surfaced in degrees (WPILib reports radians) so they read like a Spike Prime
+// gyro.
+
+const scWpilibImuValue = {
+  type: "sc_wpilib_imu_value",
+  message0: "IMU %1",
+  args0: [
+    {
+      type: "field_dropdown",
+      name: "READING",
+      options: [
+        ["heading (degrees)", "HEADING"],
+        ["turn rate (deg/sec)", "TURN_RATE"],
+        ["tilt X accel", "ACCEL_X"],
+        ["tilt Y accel", "ACCEL_Y"],
+        ["tilt Z accel", "ACCEL_Z"],
+      ],
+    },
+  ],
+  output: "Number",
+  colour: wpilibColour,
+  tooltip: "Reads the SystemCore onboard IMU (gyro/accelerometer).",
+  helpUrl: "",
+};
+
+const scWpilibImuReset = {
+  type: "sc_wpilib_imu_reset",
+  message0: "reset IMU heading",
+  previousStatement: "Command",
+  nextStatement: "Command",
+  colour: wpilibColour,
+  tooltip: "Zeroes the onboard IMU heading (yaw).",
+  helpUrl: "",
+};
+
+const scWpilibImuTrigger = {
+  type: "sc_wpilib_imu_trigger",
+  message0: "%1 IMU heading is at least %2 degrees",
+  args0: [
+    {
+      type: "field_dropdown",
+      name: "MODE",
+      options: [
+        ["when", "onTrue"],
+        ["while", "whileTrue"],
+      ],
+    },
+    {
+      type: "input_value",
+      name: "THRESHOLD",
+      check: "Number",
+    },
+  ],
+  inputsInline: true,
+  hat: true,
+  nextStatement: "Command",
+  colour: wpilibColour,
+  tooltip:
+    "Runs commands when the onboard IMU heading reaches the threshold (degrees).",
+  helpUrl: "",
+};
+
+const scWpilibMatchTime = {
+  type: "sc_wpilib_match_time",
+  message0: "match time left (seconds)",
+  output: "Number",
+  colour: wpilibColour,
+  tooltip:
+    "Seconds left in the current period (-1 when not connected to a field).",
+  helpUrl: "",
+};
+
+// --- WPILib outputs (actuators + telemetry) ----------------------------------
+// Second curated extension: raw digital outputs and SmartDashboard telemetry.
+// These only appear once the "WPILib Outputs" extension is added.
+
+const scWpilibDigitalOutputSet = {
+  type: "sc_wpilib_digital_output_set",
+  message0: "set digital output %1 %2",
+  args0: [
+    channelField("CHANNEL", 0),
+    {
+      type: "field_dropdown",
+      name: "STATE",
+      options: [
+        ["on", "ON"],
+        ["off", "OFF"],
+      ],
+    },
+  ],
+  previousStatement: "Command",
+  nextStatement: "Command",
+  colour: wpilibOutputsColour,
+  tooltip: "Drives a wpilib.DigitalOutput channel high or low.",
+  helpUrl: "",
+};
+
+const scWpilibSmartdashboardPut = {
+  type: "sc_wpilib_smartdashboard_put",
+  message0: "show %1 = %2 on dashboard",
+  args0: [
+    {
+      type: "field_input",
+      name: "KEY",
+      text: "value",
+      spellcheck: false,
+    },
+    {
+      type: "input_value",
+      name: "VALUE",
+      check: "Number",
+    },
+  ],
+  inputsInline: true,
+  previousStatement: "Command",
+  nextStatement: "Command",
+  colour: wpilibOutputsColour,
+  tooltip: "Publishes a number to SmartDashboard so you can watch it live.",
+  helpUrl: "",
+};
+
+const scWpilibSmartdashboardGet = {
+  type: "sc_wpilib_smartdashboard_get",
+  message0: "dashboard number %1",
+  args0: [
+    {
+      type: "field_input",
+      name: "KEY",
+      text: "value",
+      spellcheck: false,
+    },
+  ],
+  output: "Number",
+  colour: wpilibOutputsColour,
+  tooltip: "Reads a number from SmartDashboard (0 when it has not been set).",
   helpUrl: "",
 };
 
@@ -1362,6 +1664,14 @@ export const blocks = Blockly.common.createBlockDefinitionsFromJsonArray([
   scMotorStop,
   scMotorSetVelocity,
   scMotorSetPosition,
+  scMechanismSetPower,
+  scMechanismStop,
+  scSubsystemOnStart,
+  scSubsystemOnCommand,
+  scMotorGroup,
+  scMotorGroupSetPower,
+  scMotorGroupStop,
+  scMechanismRunCommand,
   scMovementMotors,
   scDrivetrainArcadeDrive,
   scDrivetrainTankDrive,
@@ -1373,6 +1683,7 @@ export const blocks = Blockly.common.createBlockDefinitionsFromJsonArray([
   scParallelCommands,
   scRaceCommands,
   scWaitUntil,
+  scIf,
   scA301SensorValue,
   scOperatorIsWithin,
   scWpilibDigitalInput,
@@ -1387,6 +1698,13 @@ export const blocks = Blockly.common.createBlockDefinitionsFromJsonArray([
   scWpilibDigitalInputTrigger,
   scWpilibAnalogInputTrigger,
   scWpilibEncoderTrigger,
+  scWpilibImuValue,
+  scWpilibImuReset,
+  scWpilibImuTrigger,
+  scWpilibMatchTime,
+  scWpilibDigitalOutputSet,
+  scWpilibSmartdashboardPut,
+  scWpilibSmartdashboardGet,
   scRevColorSensorValue,
   scRevColorSensorStatus,
   scRevColorSensorColorTrigger,

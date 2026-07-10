@@ -22,6 +22,11 @@ export const systemCoreTheme = Blockly.Theme.defineTheme("systemcore", {
       colourSecondary: "#46A746",
       colourTertiary: "#389438",
     },
+    control_blocks: {
+      colourPrimary: "#FFAB19",
+      colourSecondary: "#CF8B17",
+      colourTertiary: "#B87814",
+    },
   },
   categoryStyles: {
     motion_category: { colour: "#4C97FF" },
@@ -30,6 +35,7 @@ export const systemCoreTheme = Blockly.Theme.defineTheme("systemcore", {
     control_category: { colour: "#FFAB19" },
     sensing_category: { colour: "#5CB1D6" },
     wpilib_sensors_category: { colour: "#FF4C4C" },
+    wpilib_outputs_category: { colour: "#0FBC9B" },
     rev_sensors_category: { colour: "#FF5418" },
     operators_category: { colour: "#59C059" },
     variables_category: { colour: "#FF8C1A" },

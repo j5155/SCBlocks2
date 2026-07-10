@@ -114,6 +114,10 @@
   --systemcore-category-color: #ff4c4c;
 }
 
+#blocklyDiv .systemcore-category-wpilib-outputs {
+  --systemcore-category-color: #0fbc9b;
+}
+
 #blocklyDiv .systemcore-category-rev-sensors {
   --systemcore-category-color: #ff5418;
 }

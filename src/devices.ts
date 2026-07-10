@@ -35,11 +35,21 @@ export type MovementMotorsConfig =
       rearRightDeviceId: string;
     };
 
+/**
+ * An explicit, reusable-in-a-stack selection of motors. Unlike movement
+ * motors, a group has no implied drivetrain layout: every selected motor gets
+ * the same command.
+ */
+export type MotorGroupConfig = string[];
+
 const MISSING_DEVICE_LABEL = '(missing motor)';
 const EMPTY_DEVICE_LABEL = '(add a motor)';
 
 let devices: Device[] = [];
 let nextId = 1;
+// A subsystem editor only exposes motors owned by that subsystem. The project
+// editor keeps this unset and therefore sees every registered motor.
+let deviceScopeIds: ReadonlySet<string> | null = null;
 
 type DeviceListener = () => void;
 const listeners = new Set<DeviceListener>();
@@ -61,7 +71,12 @@ export const getDevice = (id: string | null | undefined): Device | undefined =>
 
 const newDeviceId = () => `device-${Date.now().toString(36)}-${nextId++}`;
 
-const deviceIdAt = (index: number) => devices[index]?.id ?? '';
+const availableDevices = () =>
+  deviceScopeIds
+    ? devices.filter((device) => deviceScopeIds!.has(device.id))
+    : devices;
+
+const deviceIdAt = (index: number) => availableDevices()[index]?.id ?? '';
 
 /** A default name that doesn't collide with an existing motor. */
 const uniqueName = (base: string) => {
@@ -113,17 +128,29 @@ export const setDevices = (list: Device[]) => {
 type DropdownOption = [string, string];
 
 const deviceOptions = (currentValue?: string): DropdownOption[] => {
-  const options: DropdownOption[] = devices.map((device) => [
+  const visibleDevices = availableDevices();
+  const options: DropdownOption[] = visibleDevices.map((device) => [
     device.name,
     device.id,
   ]);
   if (!options.length) return [[EMPTY_DEVICE_LABEL, '']];
   // Keep a dangling reference (a deleted motor) visible instead of silently
   // repointing the block at whichever motor happens to be first.
-  if (currentValue && !devices.some((device) => device.id === currentValue)) {
-    options.push([MISSING_DEVICE_LABEL, currentValue]);
+  if (currentValue && !visibleDevices.some((device) => device.id === currentValue)) {
+    options.push([
+      getDevice(currentValue) ? '(not in this subsystem)' : MISSING_DEVICE_LABEL,
+      currentValue,
+    ]);
   }
   return options;
+};
+
+/**
+ * Limits device pickers to a subsystem's owned motors while that subsystem is
+ * being edited. Passing null restores the project-wide motor list.
+ */
+export const setDeviceFieldScope = (motorIds: Iterable<string> | null) => {
+  deviceScopeIds = motorIds ? new Set(motorIds) : null;
 };
 
 // Invoked by Blockly as `this.menuGenerator_()`, so `this` is the field. Must be
@@ -243,6 +270,43 @@ export const movementMotorsSummary = (
     `left ${deviceLabel(config.leftDeviceId, 'left motor')}`,
     `right ${deviceLabel(config.rightDeviceId, 'right motor')}`,
   ].join(' ');
+};
+
+const normalizeMotorGroupConfig = (config: unknown): MotorGroupConfig => {
+  const ids = Array.isArray(config)
+    ? config
+    : config && typeof config === 'object' && Array.isArray(
+        (config as {motorIds?: unknown}).motorIds,
+      )
+      ? (config as {motorIds: unknown[]}).motorIds
+      : [];
+  return [
+    ...new Set(
+      ids.filter((id): id is string => typeof id === 'string' && Boolean(id)),
+    ),
+  ];
+};
+
+export const parseMotorGroupConfig = (
+  value: string | null | undefined,
+): MotorGroupConfig => {
+  if (!value) return [];
+  try {
+    return normalizeMotorGroupConfig(JSON.parse(value));
+  } catch {
+    return [];
+  }
+};
+
+export const serializeMotorGroupConfig = (config: MotorGroupConfig) =>
+  JSON.stringify(normalizeMotorGroupConfig(config));
+
+export const motorGroupSummary = (value: string | null | undefined) => {
+  const motorIds = parseMotorGroupConfig(value);
+  if (!motorIds.length) return '(choose motors)';
+  return motorIds
+    .map((id) => getDevice(id)?.name ?? MISSING_DEVICE_LABEL)
+    .join(' + ');
 };
 
 const fromDifferentialToMecanum = (
@@ -450,11 +514,120 @@ export class FieldMovementMotors extends Blockly.Field<string> {
 
 export const MOVEMENT_MOTORS_FIELD_TYPE = 'field_movement_motors';
 
+/**
+ * A compact multi-select field for the `motor group` value block. The selected
+ * motor ids are serialized on the block, which keeps groups local to the
+ * command where they are used while surviving motor renames.
+ */
+export class FieldMotorGroup extends Blockly.Field<string> {
+  override SERIALIZABLE = true;
+
+  constructor(value = serializeMotorGroupConfig([])) {
+    super(value);
+  }
+
+  static fromJson(config: Blockly.FieldConfig): FieldMotorGroup {
+    const value = (config as Blockly.FieldConfig & {value?: string}).value;
+    return new FieldMotorGroup(value ?? serializeMotorGroupConfig([]));
+  }
+
+  protected override doClassValidation_(newValue?: string): string | null {
+    if (newValue == null) return null;
+    return serializeMotorGroupConfig(parseMotorGroupConfig(newValue));
+  }
+
+  protected override getText_(): string {
+    return motorGroupSummary(this.getValue());
+  }
+
+  protected override showEditor_() {
+    const render = () => {
+      Blockly.DropDownDiv.clearContent();
+      const content = Blockly.DropDownDiv.getContentDiv();
+      const selected = new Set(parseMotorGroupConfig(this.getValue()));
+      const wrapper = document.createElement('div');
+      wrapper.className =
+        'grid w-72 max-w-[calc(100vw-48px)] gap-2.5 p-3 font-sans text-slate-950';
+
+      const title = document.createElement('div');
+      title.className = 'text-sm font-extrabold';
+      title.textContent = 'Motor group';
+      wrapper.appendChild(title);
+
+      const help = document.createElement('p');
+      help.className = 'text-xs font-semibold leading-5 text-slate-600';
+      help.textContent = 'Choose every motor that should receive this command.';
+      wrapper.appendChild(help);
+
+      const visible = availableDevices();
+      const options = [
+        ...visible.map((device) => ({
+          id: device.id,
+          label: device.name,
+          description: `CAN ${device.deviceId} · bus ${device.bus}`,
+        })),
+        ...[...selected]
+          .filter((id) => !visible.some((device) => device.id === id))
+          .map((id) => ({
+            id,
+            label: getDevice(id)?.name ?? MISSING_DEVICE_LABEL,
+            description: getDevice(id)
+              ? 'not in this subsystem'
+              : 'motor was removed',
+          })),
+      ];
+
+      if (!options.length) {
+        const empty = document.createElement('p');
+        empty.className = 'rounded-lg bg-amber-50 px-2.5 py-2 text-xs font-bold text-amber-900';
+        empty.textContent = 'Add a motor in Robot Setup first.';
+        wrapper.appendChild(empty);
+      }
+
+      for (const option of options) {
+        const label = document.createElement('label');
+        label.className =
+          'flex cursor-pointer items-center gap-2.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 text-sm font-bold';
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = selected.has(option.id);
+        checkbox.className = 'size-4 accent-blue-600';
+        checkbox.addEventListener('change', () => {
+          if (checkbox.checked) selected.add(option.id);
+          else selected.delete(option.id);
+          this.setValue(serializeMotorGroupConfig([...selected]));
+          render();
+        });
+        const text = document.createElement('span');
+        text.className = 'min-w-0';
+        const name = document.createElement('span');
+        name.className = 'block truncate';
+        name.textContent = option.label;
+        const description = document.createElement('span');
+        description.className = 'block text-[11px] font-semibold text-slate-500';
+        description.textContent = option.description;
+        text.append(name, description);
+        label.append(checkbox, text);
+        wrapper.appendChild(label);
+      }
+
+      content.appendChild(wrapper);
+    };
+
+    render();
+    Blockly.DropDownDiv.setColour('#ffffff', '#4c97ff');
+    Blockly.DropDownDiv.showPositionedByField(this as unknown as Blockly.Field);
+  }
+}
+
+export const MOTOR_GROUP_FIELD_TYPE = 'field_motor_group';
+
 let fieldRegistered = false;
 export const registerDeviceField = () => {
   if (fieldRegistered) return;
   Blockly.fieldRegistry.register(DEVICE_FIELD_TYPE, FieldDevice);
   Blockly.fieldRegistry.register(MOVEMENT_MOTORS_FIELD_TYPE, FieldMovementMotors);
+  Blockly.fieldRegistry.register(MOTOR_GROUP_FIELD_TYPE, FieldMotorGroup);
   fieldRegistered = true;
 };
 
@@ -466,7 +639,11 @@ export const refreshDeviceFields = (workspace: Blockly.Workspace) => {
   for (const block of workspace.getAllBlocks(false)) {
     for (const input of block.inputList) {
       for (const field of input.fieldRow) {
-        if (field instanceof FieldDevice || field instanceof FieldMovementMotors) {
+        if (
+          field instanceof FieldDevice ||
+          field instanceof FieldMovementMotors ||
+          field instanceof FieldMotorGroup
+        ) {
           field.forceRerender();
         }
       }
@@ -482,5 +659,11 @@ export const deviceField = (name = 'DEVICE') => ({
 
 export const movementMotorsField = () => ({
   type: MOVEMENT_MOTORS_FIELD_TYPE,
+  name: 'MOTORS',
+});
+
+/** Field definition helper for an inline selection of motors. */
+export const motorGroupField = () => ({
+  type: MOTOR_GROUP_FIELD_TYPE,
   name: 'MOTORS',
 });

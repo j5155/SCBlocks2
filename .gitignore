@@ -6,3 +6,9 @@ build
 auto-imports.d.ts
 components.d.ts
 .wrangler
+
+# Python metadata pipeline (python_tools/)
+python_tools/venv
+python_tools/generated/runtime_python.json
+__pycache__
+*.pyc

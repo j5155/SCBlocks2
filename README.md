@@ -38,13 +38,22 @@ We can do frontend work and planning without this but it would be really nice to
 
 # Current prototype
 
-The main toolbox path is now a small Spike Prime style surface for A301 robots:
+The app has two project modes selected from **Robot Setup**:
 
-- Events starts a `when robot runs` wrapper that generates a command-based Python robot file.
-- Devices registers A301 motors as typed Blockly variables, so other blocks can select the same device by name.
-- Motion contains A301 motor action blocks.
-- Control contains command-safe wait, wait-until, repeat, parallel, and race blocks.
-- Sensing contains beginner-facing A301 value reads.
-- Events also exposes teleop, autonomous, and trigger blocks that generate command-based scheduling code.
+- **Simple** is the beginner path: define motors once, then use their action
+  blocks directly inside Teleop, Autonomous, and Utility OpModes.
+- **Advanced** introduces commands2 subsystems. Each subsystem owns the A301
+  motors selected in Robot Setup and appears as its own editor tab. Its
+  Scratch-style event hats — `when this subsystem starts` and `when subsystem
+  command … is requested` — define reusable command groups. OpModes schedule
+  those commands through a subsystem-and-command dropdown, so requirements are
+  enforced by commands2.
 
-The old RobotPy-style "wrap every API" approach is treated as an advanced escape hatch instead of the primary workflow. The `Advanced APIs` toolbox category is generated from the A301 metadata projection and exposes raw A301 method calls, A301 value reporters, and one setup-line block for cases where a student-friendly block does not exist yet.
+OpModes remain separate tabs and each generates one decorated RobotPy class.
+Their start hats run in parallel, while trigger hats remain active for the
+duration of the OpMode. Projects are named, versioned browser snapshots with
+download/import backup support.
+
+Advanced RobotPy libraries are an escape hatch, not the primary workflow. Add
+a named project object in **Libraries** and the API blocks target that object
+from a dropdown instead of relying on a free-text `self...` target.

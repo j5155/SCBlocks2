@@ -8,7 +8,9 @@
  */
 import * as Blockly from 'blockly';
 import {pythonGenerator} from 'blockly/python';
-import {generateOpmodeClass} from './generators/python';
+import {generateMechanismDefinitions, generateOpmodeClass} from './generators/python';
+import {getMechanisms} from './mechanisms';
+import {getRobotMode} from './robotMode';
 
 export const OPMODE_DETAILS_BLOCK_TYPE = 'sc_opmode_details';
 
@@ -218,7 +220,10 @@ export const generateAllOpmodes = (tabs: OpModeTab[]): string => {
   for (const line of extraImports) {
     if (importLines.indexOf(line) === -1) importLines.push(line);
   }
-  const needsA301 = classes.some((code) => code.includes(' = A301('));
+  const needsA301 =
+    classes.some((code) => code.includes(' = A301(')) ||
+    (getRobotMode() === 'advanced' &&
+      getMechanisms().some((mechanism) => mechanism.motorIds.length > 0));
   if (needsA301) {
     importLines.push('from rev import A301');
   }
@@ -229,5 +234,6 @@ export const generateAllOpmodes = (tabs: OpModeTab[]): string => {
     );
   }
 
-  return `${importLines.join('\n')}\n\n${classes.join('\n\n\n')}\n`;
+  const mechanisms = generateMechanismDefinitions();
+  return `${importLines.join('\n')}\n\n${mechanisms ? `${mechanisms}\n\n\n` : ''}${classes.join('\n\n\n')}\n`;
 };

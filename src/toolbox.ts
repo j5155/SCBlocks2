@@ -27,6 +27,12 @@ const numberShadow = (value: number): ToolboxBlock => ({
   },
 });
 
+const booleanBlock = (value = 'TRUE'): ToolboxBlock => ({
+  kind: 'block',
+  type: 'logic_boolean',
+  fields: {BOOL: value},
+});
+
 const absoluteValueBlock = (): ToolboxBlock => ({
   kind: 'block',
   type: 'math_single',
@@ -74,6 +80,94 @@ const runForSecondsBlock = (): ToolboxBlock => ({
 const stopMotorBlock = (): ToolboxBlock => ({
   kind: 'block',
   type: 'sc_motor_stop',
+});
+
+const setMotorPowerBlock = (): ToolboxBlock => ({
+  kind: 'block',
+  type: 'sc_motor_set_power',
+  inputs: {
+    POWER: {
+      shadow: numberShadow(50),
+    },
+  },
+});
+
+const setMotorVelocityBlock = (): ToolboxBlock => ({
+  kind: 'block',
+  type: 'sc_motor_set_velocity',
+  inputs: {
+    VELOCITY: {
+      shadow: numberShadow(1200),
+    },
+  },
+});
+
+const setMotorPositionBlock = (): ToolboxBlock => ({
+  kind: 'block',
+  type: 'sc_motor_set_position',
+  inputs: {
+    POSITION: {
+      shadow: numberShadow(2),
+    },
+  },
+});
+
+const mechanismSetPowerBlock = (): ToolboxBlock => ({
+  kind: 'block',
+  type: 'sc_mechanism_set_power',
+  inputs: {
+    POWER: {
+      shadow: numberShadow(50),
+    },
+  },
+});
+
+const mechanismStopBlock = (): ToolboxBlock => ({
+  kind: 'block',
+  type: 'sc_mechanism_stop',
+});
+
+const runMechanismCommandBlock = (): ToolboxBlock => ({
+  kind: 'block',
+  type: 'sc_mechanism_run_command',
+});
+
+const motorGroupBlock = (): ToolboxBlock => ({
+  kind: 'block',
+  type: 'sc_motor_group',
+});
+
+const motorGroupSetPowerBlock = (): ToolboxBlock => ({
+  kind: 'block',
+  type: 'sc_motor_group_set_power',
+  // An explicit group lives in the command itself, so the user can see and
+  // edit exactly which motors receive the command.
+  inputs: {
+    GROUP: {block: motorGroupBlock()},
+    POWER: {shadow: numberShadow(50)},
+  },
+});
+
+const motorGroupStopBlock = (): ToolboxBlock => ({
+  kind: 'block',
+  type: 'sc_motor_group_stop',
+  inputs: {
+    GROUP: {block: motorGroupBlock()},
+  },
+});
+
+const defaultOpmodeCommandBlock = (robotMode: 'simple' | 'advanced') =>
+  robotMode === 'simple' ? runForSecondsBlock() : runMechanismCommandBlock();
+
+const defaultOpmodeConditionBlock = (robotMode: 'simple' | 'advanced') =>
+  robotMode === 'simple' ? sensorGreaterThanBlock(0) : booleanBlock();
+
+const ifBlock = (condition: ToolboxBlock): ToolboxBlock => ({
+  kind: 'block',
+  type: 'sc_if',
+  inputs: {
+    IF0: {block: condition},
+  },
 });
 
 const movementMotorsBlock = (): ToolboxBlock => ({
@@ -254,6 +348,67 @@ const encoderTriggerBlock = (aChannel = 0, bChannel = 1): ToolboxBlock => ({
   },
 });
 
+const imuValueBlock = (reading = 'HEADING'): ToolboxBlock => ({
+  kind: 'block',
+  type: 'sc_wpilib_imu_value',
+  fields: {
+    READING: reading,
+  },
+});
+
+const imuResetBlock = (): ToolboxBlock => ({
+  kind: 'block',
+  type: 'sc_wpilib_imu_reset',
+});
+
+const imuTriggerBlock = (threshold = 90): ToolboxBlock => ({
+  kind: 'block',
+  type: 'sc_wpilib_imu_trigger',
+  fields: {
+    MODE: 'onTrue',
+  },
+  inputs: {
+    THRESHOLD: {
+      shadow: numberShadow(threshold),
+    },
+  },
+});
+
+const matchTimeBlock = (): ToolboxBlock => ({
+  kind: 'block',
+  type: 'sc_wpilib_match_time',
+});
+
+const digitalOutputSetBlock = (channel = 0): ToolboxBlock => ({
+  kind: 'block',
+  type: 'sc_wpilib_digital_output_set',
+  fields: {
+    CHANNEL: channel,
+    STATE: 'ON',
+  },
+});
+
+const smartDashboardPutBlock = (): ToolboxBlock => ({
+  kind: 'block',
+  type: 'sc_wpilib_smartdashboard_put',
+  fields: {
+    KEY: 'value',
+  },
+  inputs: {
+    VALUE: {
+      shadow: numberShadow(0),
+    },
+  },
+});
+
+const smartDashboardGetBlock = (): ToolboxBlock => ({
+  kind: 'block',
+  type: 'sc_wpilib_smartdashboard_get',
+  fields: {
+    KEY: 'value',
+  },
+});
+
 const revColorSensorValueBlock = (): ToolboxBlock => ({
   kind: 'block',
   type: 'sc_rev_color_sensor_value',
@@ -367,9 +522,13 @@ const wpilibSensorsCategory = {
   categorystyle: 'wpilib_sensors_category',
   cssConfig: categoryCss('wpilib-sensors'),
   contents: [
+    imuTriggerBlock(90),
     digitalInputTriggerBlock(0),
     analogInputTriggerBlock(0),
     encoderTriggerBlock(0, 1),
+    imuValueBlock('HEADING'),
+    imuResetBlock(),
+    matchTimeBlock(),
     digitalInputBlock(0),
     analogInputBlock(0),
     encoderValueBlock(0, 1),
@@ -379,6 +538,18 @@ const wpilibSensorsCategory = {
     analogEncoderBlock(0),
     analogAccelerometerBlock(0),
     analogPotentiometerBlock(0),
+  ],
+};
+
+const wpilibOutputsCategory = {
+  kind: 'category',
+  name: 'WPILib Outputs',
+  categorystyle: 'wpilib_outputs_category',
+  cssConfig: categoryCss('wpilib-outputs'),
+  contents: [
+    digitalOutputSetBlock(0),
+    smartDashboardPutBlock(),
+    smartDashboardGetBlock(),
   ],
 };
 
@@ -396,57 +567,24 @@ const revSensorsCategory = {
   ],
 };
 
-export const buildToolbox = ({
-  includeGamepad,
-  includeWpilibSensors = false,
-  includeRevSensors = false,
-}: {
-  includeGamepad: boolean;
-  includeWpilibSensors?: boolean;
-  includeRevSensors?: boolean;
-}) => ({
+const subsystemToolbox = () => ({
   kind: 'categoryToolbox',
   contents: [
     {
       kind: 'category',
-      name: 'OpMode',
+      name: 'Events',
       categorystyle: 'events_category',
       cssConfig: categoryCss('events'),
       contents: [
-        // Opmode-scoped hat blocks. Each opmode tab starts with a details hat and
-        // an "on start" hat; these let you add an "on start" hat, a setup hat (for
-        // advanced raw-Python setup — motors are registered automatically), and
-        // triggers with any condition.
         {
           kind: 'block',
-          type: 'sc_on_start',
-          next: {
-            block: runForSecondsBlock(),
-          },
+          type: 'sc_subsystem_on_start',
+          next: {block: motorGroupSetPowerBlock()},
         },
         {
           kind: 'block',
-          type: 'sc_on_setup',
-          inputs: {
-            SETUP: {
-              block: {
-                kind: 'block',
-                type: 'sc_python_setup_line',
-              },
-            },
-          },
-        },
-        {
-          kind: 'block',
-          type: 'sc_trigger',
-          inputs: {
-            CONDITION: {
-              block: sensorGreaterThanBlock(0),
-            },
-          },
-          next: {
-            block: stopMotorBlock(),
-          },
+          type: 'sc_subsystem_on_command',
+          next: {block: motorGroupSetPowerBlock()},
         },
       ],
     },
@@ -456,35 +594,14 @@ export const buildToolbox = ({
       categorystyle: 'motion_category',
       cssConfig: categoryCss('motion'),
       contents: [
-        {
-          kind: 'block',
-          type: 'sc_motor_set_power',
-          inputs: {
-            POWER: {
-              shadow: numberShadow(50),
-            },
-          },
-        },
+        motorGroupSetPowerBlock(),
+        motorGroupStopBlock(),
+        motorGroupBlock(),
+        setMotorPowerBlock(),
         runForSecondsBlock(),
         stopMotorBlock(),
-        {
-          kind: 'block',
-          type: 'sc_motor_set_velocity',
-          inputs: {
-            VELOCITY: {
-              shadow: numberShadow(1200),
-            },
-          },
-        },
-        {
-          kind: 'block',
-          type: 'sc_motor_set_position',
-          inputs: {
-            POSITION: {
-              shadow: numberShadow(2),
-            },
-          },
-        },
+        setMotorVelocityBlock(),
+        setMotorPositionBlock(),
       ],
     },
     {
@@ -507,6 +624,144 @@ export const buildToolbox = ({
       categorystyle: 'control_category',
       cssConfig: categoryCss('control'),
       contents: [
+        ifBlock(booleanBlock()),
+        {
+          kind: 'block',
+          type: 'sc_wait_seconds',
+          inputs: {SECONDS: {shadow: numberShadow(1)}},
+        },
+        {
+          kind: 'block',
+          type: 'sc_repeat_commands',
+          inputs: {
+            TIMES: {shadow: numberShadow(3)},
+            COMMANDS: {block: motorGroupSetPowerBlock()},
+          },
+        },
+        {
+          kind: 'block',
+          type: 'sc_parallel_commands',
+          inputs: {
+            FIRST: {block: motorGroupSetPowerBlock()},
+            SECOND: {block: motorGroupSetPowerBlock()},
+          },
+        },
+      ],
+    },
+    {
+      kind: 'category',
+      name: 'Operators',
+      categorystyle: 'operators_category',
+      cssConfig: categoryCss('operators'),
+      contents: [numberShadow(0), absoluteValueBlock(), isWithinBlock()],
+    },
+  ],
+});
+
+export const buildToolbox = ({
+  includeGamepad,
+  includeWpilibSensors = false,
+  includeWpilibOutputs = false,
+  includeRevSensors = false,
+  editor = 'opmode',
+  robotMode = 'simple',
+}: {
+  includeGamepad: boolean;
+  includeWpilibSensors?: boolean;
+  includeWpilibOutputs?: boolean;
+  includeRevSensors?: boolean;
+  editor?: 'opmode' | 'subsystem';
+  robotMode?: 'simple' | 'advanced';
+}) => ({
+  ...(editor === 'subsystem' ? subsystemToolbox() : {
+  kind: 'categoryToolbox',
+  contents: [
+    {
+      kind: 'category',
+      name: 'OpMode',
+      categorystyle: 'events_category',
+      cssConfig: categoryCss('events'),
+      contents: [
+        // OpMode-scoped hats. Configure a tab from the OpMode button, put
+        // project-wide hardware in Robot Setup, and use these only for a start
+        // stack, advanced per-opmode setup, or an always-active trigger.
+        {
+          kind: 'block',
+          type: 'sc_on_start',
+          next: {
+            block: defaultOpmodeCommandBlock(robotMode),
+          },
+        },
+        {
+          kind: 'block',
+          type: 'sc_on_setup',
+          inputs: {
+            SETUP: {
+              block: {
+                kind: 'block',
+                type: 'sc_python_setup_line',
+              },
+            },
+          },
+        },
+        {
+          kind: 'block',
+          type: 'sc_trigger',
+          inputs: {
+            CONDITION: {
+              block: defaultOpmodeConditionBlock(robotMode),
+            },
+          },
+          next: {
+            block: defaultOpmodeCommandBlock(robotMode),
+          },
+        },
+      ],
+    },
+    ...(robotMode === 'simple' ? [{
+      kind: 'category',
+      name: 'Motors',
+      categorystyle: 'motion_category',
+      cssConfig: categoryCss('motion'),
+      contents: [
+        setMotorPowerBlock(),
+        motorGroupSetPowerBlock(),
+        motorGroupStopBlock(),
+        motorGroupBlock(),
+        runForSecondsBlock(),
+        stopMotorBlock(),
+        setMotorVelocityBlock(),
+        setMotorPositionBlock(),
+      ],
+    }] : []),
+    ...(robotMode === 'simple' ? [{
+      kind: 'category',
+      name: 'Movement',
+      categorystyle: 'movement_category',
+      cssConfig: categoryCss('movement'),
+      contents: [
+        movementMotorsBlock(),
+        arcadeDriveBlock(),
+        tankDriveBlock(),
+        stopDrivetrainBlock(),
+        mecanumDriveBlock(),
+        stopMecanumBlock(),
+      ],
+    }] : []),
+    ...(robotMode === 'advanced' ? [{
+      kind: 'category',
+      name: 'Subsystems',
+      categorystyle: 'movement_category',
+      cssConfig: categoryCss('movement'),
+      contents: [runMechanismCommandBlock()],
+    }] : []),
+    {
+      kind: 'category',
+      name: 'Control',
+      categorystyle: 'control_category',
+      cssConfig: categoryCss('control'),
+      contents: [
+        ifBlock(defaultOpmodeConditionBlock(robotMode)),
         {
           kind: 'block',
           type: 'sc_wait_seconds',
@@ -524,7 +779,7 @@ export const buildToolbox = ({
               shadow: numberShadow(3),
             },
             COMMANDS: {
-              block: runForSecondsBlock(),
+              block: defaultOpmodeCommandBlock(robotMode),
             },
           },
         },
@@ -533,10 +788,10 @@ export const buildToolbox = ({
           type: 'sc_parallel_commands',
           inputs: {
             FIRST: {
-              block: runForSecondsBlock(),
+              block: defaultOpmodeCommandBlock(robotMode),
             },
             SECOND: {
-              block: runForSecondsBlock(),
+              block: defaultOpmodeCommandBlock(robotMode),
             },
           },
         },
@@ -545,10 +800,10 @@ export const buildToolbox = ({
           type: 'sc_race_commands',
           inputs: {
             FIRST: {
-              block: runForSecondsBlock(),
+              block: defaultOpmodeCommandBlock(robotMode),
             },
             SECOND: {
-              block: runForSecondsBlock(),
+              block: defaultOpmodeCommandBlock(robotMode),
             },
           },
         },
@@ -557,20 +812,21 @@ export const buildToolbox = ({
           type: 'sc_wait_until',
           inputs: {
             CONDITION: {
-              block: sensorGreaterThanBlock(0),
+              block: defaultOpmodeConditionBlock(robotMode),
             },
           },
         },
       ],
     },
-    {
+    ...(robotMode === 'simple' ? [{
       kind: 'category',
       name: 'Sensing',
       categorystyle: 'sensing_category',
       cssConfig: categoryCss('sensing'),
       contents: [sensorValueBlock()],
-    },
+    }] : []),
     ...(includeWpilibSensors ? [wpilibSensorsCategory] : []),
+    ...(includeWpilibOutputs ? [wpilibOutputsCategory] : []),
     ...(includeRevSensors ? [revSensorsCategory] : []),
     ...(includeGamepad ? [gamepadCategory] : []),
     {
@@ -642,6 +898,7 @@ export const buildToolbox = ({
       custom: EXTENSIONS_TOOLBOX_CATEGORY,
     },
   ],
+  }),
 });
 
 // Default toolbox (no gamepad category). App.vue swaps in the gamepad variant

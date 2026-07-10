@@ -1,9 +1,9 @@
 // AUTO-GENERATED — do not edit by hand.
 // Regenerate with: npm run generate:api -- [path/to/robotpy_data.json]
 //
-// This is the escape-hatch RobotPy API catalog covering the full scope of
-// ../systemcore-blocks-interface. It is imported lazily (see src/extensions.ts)
-// so none of it ships in the default toolbox.
+// This is the escape-hatch RobotPy API catalog covering the full RobotPy scope.
+// It is projected from python_tools/generated/robotpy_data.json and imported
+// lazily (see src/extensions.ts) so none of it ships in the default toolbox.
 
 export type ApiArg = {name: string; type: string; default: string};
 

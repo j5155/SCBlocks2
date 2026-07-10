@@ -14,9 +14,7 @@ import * as Blockly from 'blockly';
 import {Order, type PythonGenerator} from 'blockly/python';
 import {
   loadCatalog,
-  methodLabel,
   returnsValue,
-  simpleName,
   surfacedMethods,
   type ApiClass,
 } from './apiCatalog';
@@ -25,12 +23,24 @@ import {
   A301_INSTANCE_METHODS,
   A301_VALUE_METHODS,
 } from './generated/a301';
+import {
+  extensionInstanceReference,
+  instantCommandExpr,
+  registerPythonImport,
+} from './generators/python';
+import {
+  extensionInstancesForClass,
+  getExtensionInstance,
+  onExtensionInstancesChanged,
+  registerExtensionInstanceField,
+} from './extensionInstances';
 
 const extensionColour = '#5C81A6';
 
 export const EXTENSIONS_TOOLBOX_CATEGORY = 'SYSTEMCORE_EXTENSIONS';
 export const ADD_EXTENSION_CALLBACK = 'ADD_EXTENSION';
 export const WPILIB_SENSORS_EXTENSION_ID = 'handwrapped:wpilib-sensors';
+export const WPILIB_OUTPUTS_EXTENSION_ID = 'handwrapped:wpilib-outputs';
 export const REV_SENSORS_EXTENSION_ID = 'handwrapped:rev-sensors';
 
 export const handWrappedExtensions = [
@@ -38,9 +48,17 @@ export const handWrappedExtensions = [
     id: WPILIB_SENSORS_EXTENSION_ID,
     name: 'WPILib Sensors',
     summary:
-      'Digital inputs, analog sensors, encoders, and duty-cycle encoders.',
+      'Onboard IMU, digital/analog inputs, encoders, and match time.',
     color: '#FF4C4C',
-    chips: ['DIO', 'Analog', 'Encoders'],
+    chips: ['IMU', 'DIO', 'Encoders'],
+  },
+  {
+    id: WPILIB_OUTPUTS_EXTENSION_ID,
+    name: 'WPILib Outputs',
+    summary:
+      'Digital outputs and SmartDashboard telemetry (show/read numbers).',
+    color: '#0FBC9B',
+    chips: ['Digital out', 'Dashboard'],
   },
   {
     id: REV_SENSORS_EXTENSION_ID,
@@ -104,9 +122,6 @@ export const onExtensionsChanged = (listener: () => void) => {
 // Generic escape-hatch block definitions
 // ---------------------------------------------------------------------------
 
-const targetDefault = (cls: ApiClass) =>
-  `self.${simpleName(cls.className).replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase()}`;
-
 const scExtCall = {
   type: 'sc_ext_call',
   message0: 'call %1 . %2 ( %3 )',
@@ -149,10 +164,49 @@ const scExtEnum = {
   helpUrl: '',
 };
 
+// New advanced API blocks keep their target honest: users pick a named project
+// object from a dropdown instead of typing a guessed `self.some_thing` target.
+// CLASS stays visible so a block remains understandable after it is copied.
+const scExtInstanceCall = {
+  type: 'sc_ext_instance_call',
+  message0: 'call %1 %2 %3 . %4 ( %5 )',
+  args0: [
+    {type: 'field_label', text: 'on'},
+    {type: 'field_label_serializable', name: 'CLASS', text: 'Object'},
+    {type: 'field_extension_instance', name: 'INSTANCE'},
+    {type: 'field_label_serializable', name: 'METHOD', text: 'method'},
+    {type: 'field_input', name: 'ARGS', text: '', spellcheck: false},
+  ],
+  previousStatement: 'Command',
+  nextStatement: 'Command',
+  colour: extensionColour,
+  tooltip:
+    'Calls a method on a named project object. Add or edit objects in Libraries.',
+  helpUrl: '',
+};
+
+const scExtInstanceValue = {
+  type: 'sc_ext_instance_value',
+  message0: '%1 %2 . %3 ( %4 )',
+  args0: [
+    {type: 'field_label_serializable', name: 'CLASS', text: 'Object'},
+    {type: 'field_extension_instance', name: 'INSTANCE'},
+    {type: 'field_label_serializable', name: 'METHOD', text: 'method'},
+    {type: 'field_input', name: 'ARGS', text: '', spellcheck: false},
+  ],
+  output: null,
+  colour: extensionColour,
+  tooltip:
+    'Reads a method result from a named project object. Add or edit objects in Libraries.',
+  helpUrl: '',
+};
+
 export const extensionBlocks = Blockly.common.createBlockDefinitionsFromJsonArray([
   scExtCall,
   scExtValue,
   scExtEnum,
+  scExtInstanceCall,
+  scExtInstanceValue,
 ]);
 
 // ---------------------------------------------------------------------------
@@ -162,9 +216,7 @@ export const extensionBlocks = Blockly.common.createBlockDefinitionsFromJsonArra
 const importForDotted = (generator: PythonGenerator, dotted: string) => {
   const root = dotted.split('.')[0];
   if (!root || root === 'self') return;
-  (generator as unknown as {definitions_: Record<string, string>}).definitions_[
-    `import_${root}`
-  ] = `import ${root}`;
+  registerPythonImport(generator, root);
 };
 
 const callExpression = (block: Blockly.Block, generator: PythonGenerator) => {
@@ -181,7 +233,11 @@ extensionForBlock['sc_ext_call'] = function (
   block: Blockly.Block,
   generator: PythonGenerator,
 ) {
-  return `commands2.InstantCommand(lambda: ${callExpression(block, generator)}),\n`;
+  // Keep advanced API calls consistent with beginner-facing motor blocks:
+  // emit a named `block_N` method and reference the imported InstantCommand
+  // directly. The older `commands2.InstantCommand(...)` form produced Python
+  // that never imported the `commands2` module.
+  return `${instantCommandExpr(callExpression(block, generator))},\n`;
 };
 
 extensionForBlock['sc_ext_value'] = function (
@@ -201,27 +257,57 @@ extensionForBlock['sc_ext_enum'] = function (
   return [`${enumName}.${value}`, Order.MEMBER];
 };
 
+const instanceCallExpression = (
+  block: Blockly.Block,
+  generator: PythonGenerator,
+) => {
+  const instance = getExtensionInstance(block.getFieldValue('INSTANCE'));
+  if (!instance) return null;
+  importForDotted(generator, instance.className);
+  const method = block.getFieldValue('METHOD');
+  const args = (block.getFieldValue('ARGS') || '').trim();
+  return `${extensionInstanceReference(instance)}.${method}(${args})`;
+};
+
+extensionForBlock['sc_ext_instance_call'] = function (
+  block: Blockly.Block,
+  generator: PythonGenerator,
+) {
+  const call = instanceCallExpression(block, generator);
+  return `${instantCommandExpr(call || 'pass')},\n`;
+};
+
+extensionForBlock['sc_ext_instance_value'] = function (
+  block: Blockly.Block,
+  generator: PythonGenerator,
+) {
+  const call = instanceCallExpression(block, generator);
+  return [call || 'None', Order.FUNCTION_CALL];
+};
+
 // ---------------------------------------------------------------------------
 // Dynamic flyout for the Extensions category
 // ---------------------------------------------------------------------------
 
 type FlyoutItem = {kind: string; [key: string]: unknown};
 
-const callBlockFor = (cls: ApiClass, method: {name: string; args: {name: string}[]}): FlyoutItem => ({
+const instanceCallBlockFor = (cls: ApiClass, method: {name: string; args: {name: string}[]}): FlyoutItem => ({
   kind: 'block',
-  type: 'sc_ext_call',
+  type: 'sc_ext_instance_call',
   fields: {
-    TARGET: targetDefault(cls),
+    CLASS: cls.className,
+    INSTANCE: extensionInstancesForClass(cls.className)[0]?.id || '',
     METHOD: method.name,
     ARGS: method.args.map((arg) => arg.name).join(', '),
   },
 });
 
-const valueBlockFor = (cls: ApiClass, method: {name: string; args: {name: string}[]}): FlyoutItem => ({
+const instanceValueBlockFor = (cls: ApiClass, method: {name: string; args: {name: string}[]}): FlyoutItem => ({
   kind: 'block',
-  type: 'sc_ext_value',
+  type: 'sc_ext_instance_value',
   fields: {
-    TARGET: targetDefault(cls),
+    CLASS: cls.className,
+    INSTANCE: extensionInstancesForClass(cls.className)[0]?.id || '',
     METHOD: method.name,
     ARGS: method.args.map((arg) => arg.name).join(', '),
   },
@@ -305,9 +391,18 @@ export const buildExtensionsFlyout = (): FlyoutItem[] => {
     }
     if (!cls) continue;
 
+    if (!extensionInstancesForClass(className).length) {
+      contents.push({
+        kind: 'label',
+        text: 'Add a named object in Libraries to use these methods.',
+      });
+    }
+
     for (const method of surfacedMethods(cls)) {
       contents.push(
-        returnsValue(method) ? valueBlockFor(cls, method) : callBlockFor(cls, method),
+        returnsValue(method)
+          ? instanceValueBlockFor(cls, method)
+          : instanceCallBlockFor(cls, method),
       );
     }
     contents.push(...enumBlocksFor(cls));
@@ -326,6 +421,7 @@ export const registerExtensions = (
   pythonGenerator: PythonGenerator,
   onAddExtension: () => void,
 ) => {
+  registerExtensionInstanceField();
   if (!Blockly.Blocks['sc_ext_call']) {
     Blockly.common.defineBlocks(extensionBlocks);
   }
@@ -344,6 +440,9 @@ export const registerExtensions = (
   // fetched on demand (when the picker opens), so nothing generated is loaded
   // until the user asks for it.
   onExtensionsChanged(() => {
+    workspace.getToolbox()?.refreshSelection();
+  });
+  onExtensionInstancesChanged(() => {
     workspace.getToolbox()?.refreshSelection();
   });
 };

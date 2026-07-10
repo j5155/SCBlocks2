@@ -5,9 +5,21 @@ import {blocks} from '../src/blocks/text';
 import {
   addDevice,
   registerDeviceField,
+  serializeMotorGroupConfig,
   serializeMovementMotorsConfig,
   setDevices,
 } from '../src/devices';
+import {
+  addMechanism,
+  registerMechanismField,
+  setMechanisms,
+  updateMechanism,
+} from '../src/mechanisms';
+import {
+  addExtensionInstance,
+  registerExtensionInstanceField,
+  setExtensionInstances,
+} from '../src/extensionInstances';
 import {forBlock, generateOpmodeClass} from '../src/generators/python';
 import {
   addExtension,
@@ -24,6 +36,7 @@ import {
   opmodeInfoFromState,
 } from '../src/opmodes';
 import {buildToolbox, toolbox} from '../src/toolbox';
+import {setRobotMode} from '../src/robotMode';
 
 const assert = (condition: unknown, message: string) => {
   if (!condition) {
@@ -36,6 +49,8 @@ const assertIncludes = (haystack: string, needle: string) => {
 };
 
 registerDeviceField();
+registerMechanismField();
+registerExtensionInstanceField();
 if (!Blockly.Blocks['sc_opmode_details']) {
   Blockly.common.defineBlocks(blocks);
 }
@@ -112,6 +127,69 @@ assertIncludes(withinCode[0], 'abs((12) - (10)) <= abs(2)');
 withinBlock.dispose(true);
 
 // ---------------------------------------------------------------------------
+// Contextual if: command stacks compose Commands2 ConditionalCommands, while
+// the direct setup path remains regular, properly indented Python control flow.
+// ---------------------------------------------------------------------------
+
+const ifWorkspace = new Blockly.Workspace();
+const ifDetails = ifWorkspace.newBlock('sc_opmode_details');
+ifDetails.setFieldValue('If Context', 'NAME');
+
+const commandStart = ifWorkspace.newBlock('sc_on_start');
+const commandIf = ifWorkspace.newBlock('sc_if') as Blockly.Block & {
+  loadExtraState?: (state: {hasElse?: boolean}) => void;
+};
+assert(
+  commandIf.getStyleName() === 'control_blocks',
+  'The contextual if block should use the Control block style',
+);
+commandIf.loadExtraState?.({hasElse: true});
+assert(commandIf.getInput('ELSE'), 'The if block should support an else branch');
+const commandCondition = ifWorkspace.newBlock('logic_boolean');
+commandCondition.setFieldValue('TRUE', 'BOOL');
+connectValue(commandIf, 'IF0', commandCondition);
+const thenPower = ifWorkspace.newBlock('sc_motor_set_power');
+setDevice(thenPower);
+connectValue(thenPower, 'POWER', numberBlock(25, ifWorkspace));
+connectStatement(commandIf, 'DO0', thenPower);
+const elsePower = ifWorkspace.newBlock('sc_motor_set_power');
+setDevice(elsePower);
+connectValue(elsePower, 'POWER', numberBlock(-25, ifWorkspace));
+connectStatement(commandIf, 'ELSE', elsePower);
+connectNext(commandStart, commandIf);
+
+pythonGenerator.init(ifWorkspace);
+const commandIfCode = generateOpmodeClass(ifWorkspace, pythonGenerator);
+assertIncludes(commandIfCode, 'ConditionalCommand(');
+assertIncludes(commandIfCode, 'lambda: True');
+assertIncludes(commandIfCode, 'max(-1, min(1, (25) / 100.0))');
+assertIncludes(commandIfCode, 'max(-1, min(1, (-25) / 100.0))');
+
+const setupHat = ifWorkspace.newBlock('sc_on_setup');
+const setupIf = ifWorkspace.newBlock('sc_if') as Blockly.Block & {
+  loadExtraState?: (state: {hasElse?: boolean}) => void;
+};
+setupIf.loadExtraState?.({hasElse: true});
+const setupCondition = ifWorkspace.newBlock('logic_boolean');
+setupCondition.setFieldValue('FALSE', 'BOOL');
+connectValue(setupIf, 'IF0', setupCondition);
+const setupThen = ifWorkspace.newBlock('sc_python_setup_line');
+setupThen.setFieldValue('self.ready = True', 'CODE');
+connectStatement(setupIf, 'DO0', setupThen);
+const setupElse = ifWorkspace.newBlock('sc_python_setup_line');
+setupElse.setFieldValue('self.ready = False', 'CODE');
+connectStatement(setupIf, 'ELSE', setupElse);
+connectStatement(setupHat, 'SETUP', setupIf);
+
+pythonGenerator.init(ifWorkspace);
+const setupIfCode = generateOpmodeClass(ifWorkspace, pythonGenerator);
+assertIncludes(
+  setupIfCode,
+  '        if False:\n          self.ready = True\n        else:\n          self.ready = False',
+);
+ifWorkspace.dispose();
+
+// ---------------------------------------------------------------------------
 // OpMode: separate, opmode-scoped hat blocks (details / setup / start / trigger)
 // assembled into one decorated class by generateOpmodeClass().
 // ---------------------------------------------------------------------------
@@ -185,8 +263,8 @@ const revColorValue = workspace.newBlock('sc_rev_color_sensor_value');
 revColorValue.setFieldValue('MXP', 'PORT');
 revColorValue.setFieldValue('RED', 'READING');
 assert(
-  revColorValue.getColour().toLowerCase() === '#ff8c1a',
-  'REV color sensor extension blocks should use a Scratch-style orange',
+  revColorValue.getColour().toLowerCase() === '#ff5418',
+  'REV color sensor extension blocks should use the REV orange-red',
 );
 pythonGenerator.init(workspace);
 const revColorCode = pythonGenerator.blockToCode(revColorValue);
@@ -642,6 +720,324 @@ assertIncludes(multiCode, 'class Score(wpilib.PeriodicOpMode):');
 assertIncludes(multiCode, '@teleop');
 assertIncludes(multiCode, '@autonomous');
 assertIncludes(multiCode, 'from robot import autonomous, teleop');
+
+// ---------------------------------------------------------------------------
+// Newly hand-wrapped WPILib APIs: the onboard IMU (gyro), match time, digital
+// outputs and SmartDashboard telemetry. The IMU is a singleton built once in
+// __init__; angles are surfaced in degrees.
+// ---------------------------------------------------------------------------
+
+const wpilibExtrasWorkspace = new Blockly.Workspace();
+const extrasDetails = wpilibExtrasWorkspace.newBlock('sc_opmode_details');
+extrasDetails.setFieldValue('Auto', 'TYPE');
+extrasDetails.setFieldValue('TRUE', 'ENABLED');
+extrasDetails.setFieldValue('Sensors Extra', 'NAME');
+
+// IMU heading trigger drives a command stack.
+const imuTrigger = wpilibExtrasWorkspace.newBlock('sc_wpilib_imu_trigger');
+imuTrigger.setFieldValue('onTrue', 'MODE');
+const imuThreshold = numberBlock(90, wpilibExtrasWorkspace);
+connectValue(imuTrigger, 'THRESHOLD', imuThreshold);
+const imuReset = wpilibExtrasWorkspace.newBlock('sc_wpilib_imu_reset');
+connectNext(imuTrigger, imuReset);
+
+// An "on start" stack: publish the IMU heading and match time to the dashboard.
+const extrasStart = wpilibExtrasWorkspace.newBlock('sc_on_start');
+const dashboardPut = wpilibExtrasWorkspace.newBlock('sc_wpilib_smartdashboard_put');
+dashboardPut.setFieldValue('heading', 'KEY');
+const imuHeading = wpilibExtrasWorkspace.newBlock('sc_wpilib_imu_value');
+imuHeading.setFieldValue('HEADING', 'READING');
+connectValue(dashboardPut, 'VALUE', imuHeading);
+connectNext(extrasStart, dashboardPut);
+const digitalOut = wpilibExtrasWorkspace.newBlock('sc_wpilib_digital_output_set');
+digitalOut.setFieldValue('2', 'CHANNEL');
+digitalOut.setFieldValue('ON', 'STATE');
+dashboardPut.nextConnection!.connect(digitalOut.previousConnection!);
+
+// Standalone value blocks: match time and the dashboard reader.
+const matchTime = wpilibExtrasWorkspace.newBlock('sc_wpilib_match_time');
+pythonGenerator.init(wpilibExtrasWorkspace);
+const matchTimeCode = pythonGenerator.blockToCode(matchTime);
+assert(Array.isArray(matchTimeCode), 'Match time should be a value expression');
+assertIncludes(matchTimeCode[0], 'wpilib.Timer.getMatchTime()');
+matchTime.dispose(true);
+
+const dashboardGet = wpilibExtrasWorkspace.newBlock('sc_wpilib_smartdashboard_get');
+dashboardGet.setFieldValue('target', 'KEY');
+pythonGenerator.init(wpilibExtrasWorkspace);
+const dashboardGetCode = pythonGenerator.blockToCode(dashboardGet);
+assert(Array.isArray(dashboardGetCode), 'Dashboard get should be a value expression');
+assertIncludes(dashboardGetCode[0], 'wpilib.SmartDashboard.getNumber("target", 0)');
+dashboardGet.dispose(true);
+
+pythonGenerator.init(wpilibExtrasWorkspace);
+const extrasCode = generateOpmodeClass(wpilibExtrasWorkspace, pythonGenerator);
+assertIncludes(
+  extrasCode,
+  'self.imu = wpilib.OnboardIMU(wpilib.OnboardIMU.MountOrientation.FLAT)',
+);
+assertIncludes(extrasCode, 'self.digital_output_2 = wpilib.DigitalOutput(2)');
+assertIncludes(extrasCode, 'Trigger(lambda: math.degrees(self.imu.getYaw()) >= (90))');
+assertIncludes(extrasCode, 'self.imu.resetYaw()');
+assertIncludes(extrasCode, 'wpilib.SmartDashboard.putNumber("heading", math.degrees(self.imu.getYaw()))');
+assertIncludes(extrasCode, 'self.digital_output_2.set(True)');
+
+// The IMU is a singleton: exactly one OnboardIMU construction even though three
+// IMU blocks (trigger, reset, value) reference it.
+assert(
+  extrasCode.split('wpilib.OnboardIMU(').length - 1 === 1,
+  'The onboard IMU should be constructed exactly once',
+);
+
+// Using the IMU pulls in `import math` for the degree conversion.
+const extrasFullCode = generateAllOpmodes([
+  {
+    id: 'wpilib-extras',
+    state: Blockly.serialization.workspaces.save(wpilibExtrasWorkspace),
+  },
+]);
+assertIncludes(extrasFullCode, 'import math');
+wpilibExtrasWorkspace.dispose();
+
+// ---------------------------------------------------------------------------
+// Advanced mode: a subsystem owns its motors and has its own Scratch-style
+// event workspace. Command-event hats become Command factories that an OpMode
+// selects through the subsystem/command block.
+// ---------------------------------------------------------------------------
+
+setRobotMode('advanced');
+setMechanisms([]);
+const legacySubsystem = addMechanism({
+  name: 'legacy intake',
+  motorIds: [device.id, rightMotor.id],
+  state: {
+    blocks: {
+      languageVersion: 0,
+      blocks: [
+        {
+          type: 'sc_subsystem_on_command',
+          fields: {COMMAND: 'run'},
+          next: {
+            block: {
+              type: 'sc_subsystem_set_power',
+              inputs: {
+                POWER: {
+                  shadow: {type: 'math_number', fields: {NUM: 50}},
+                },
+              },
+              next: {block: {type: 'sc_subsystem_stop'}},
+            },
+          },
+        },
+      ],
+    },
+  },
+});
+const migratedLegacyState = JSON.stringify(legacySubsystem.state);
+assert(
+  !migratedLegacyState.includes('sc_subsystem_set_power') &&
+    !migratedLegacyState.includes('sc_subsystem_stop'),
+  'Saved implicit subsystem-motor blocks should migrate to explicit groups',
+);
+assertIncludes(migratedLegacyState, 'sc_motor_group_set_power');
+assertIncludes(migratedLegacyState, device.id);
+assertIncludes(migratedLegacyState, rightMotor.id);
+setMechanisms([]);
+const intake = addMechanism({
+  name: 'intake',
+  motorIds: [device.id, rightMotor.id],
+});
+const makeMotorGroup = (targetWorkspace: Blockly.Workspace) => {
+  const group = targetWorkspace.newBlock('sc_motor_group');
+  group.setFieldValue(
+    serializeMotorGroupConfig([device.id, rightMotor.id]),
+    'MOTORS',
+  );
+  return group;
+};
+const subsystemWorkspace = new Blockly.Workspace();
+const subsystemStart = subsystemWorkspace.newBlock('sc_subsystem_on_start');
+const subsystemStartPower = subsystemWorkspace.newBlock('sc_motor_group_set_power');
+connectValue(subsystemStartPower, 'GROUP', makeMotorGroup(subsystemWorkspace));
+connectValue(subsystemStartPower, 'POWER', numberBlock(15, subsystemWorkspace));
+connectNext(subsystemStart, subsystemStartPower);
+const subsystemCommand = subsystemWorkspace.newBlock('sc_subsystem_on_command');
+subsystemCommand.setFieldValue('intake_piece', 'COMMAND');
+const subsystemPower = subsystemWorkspace.newBlock('sc_motor_group_set_power');
+connectValue(subsystemPower, 'GROUP', makeMotorGroup(subsystemWorkspace));
+connectValue(subsystemPower, 'POWER', numberBlock(65, subsystemWorkspace));
+const subsystemStop = subsystemWorkspace.newBlock('sc_motor_group_stop');
+connectValue(subsystemStop, 'GROUP', makeMotorGroup(subsystemWorkspace));
+connectNext(subsystemCommand, subsystemPower);
+subsystemPower.nextConnection!.connect(subsystemStop.previousConnection!);
+const subsystemMotorPower = subsystemWorkspace.newBlock('sc_motor_set_power');
+subsystemMotorPower.setFieldValue(device.id, 'DEVICE');
+connectValue(subsystemMotorPower, 'POWER', numberBlock(40, subsystemWorkspace));
+subsystemStop.nextConnection!.connect(subsystemMotorPower.previousConnection!);
+const subsystemMovement = subsystemWorkspace.newBlock('sc_movement_motors');
+subsystemMovement.setFieldValue(
+  serializeMovementMotorsConfig({
+    kind: 'differential',
+    leftDeviceId: device.id,
+    rightDeviceId: rightMotor.id,
+  }),
+  'MOTORS',
+);
+const subsystemDrive = subsystemWorkspace.newBlock('sc_drivetrain_arcade_drive');
+connectValue(subsystemDrive, 'FORWARD', numberBlock(30, subsystemWorkspace));
+connectValue(subsystemDrive, 'TURN', numberBlock(5, subsystemWorkspace));
+subsystemMotorPower.nextConnection!.connect(subsystemDrive.previousConnection!);
+updateMechanism(intake.id, {
+  state: Blockly.serialization.workspaces.save(subsystemWorkspace),
+});
+
+const mechanismWorkspace = new Blockly.Workspace();
+const mechanismDetails = mechanismWorkspace.newBlock('sc_opmode_details');
+mechanismDetails.setFieldValue('Mechanism Test', 'NAME');
+const mechanismStart = mechanismWorkspace.newBlock('sc_on_start');
+const runIntake = mechanismWorkspace.newBlock('sc_mechanism_run_command');
+runIntake.setFieldValue(intake.id, 'MECHANISM');
+runIntake.setFieldValue('intake_piece', 'COMMAND');
+connectNext(mechanismStart, runIntake);
+pythonGenerator.init(mechanismWorkspace);
+const mechanismCode = generateOpmodeClass(mechanismWorkspace, pythonGenerator);
+assertIncludes(mechanismCode, 'self.intake = IntakeSubsystem()');
+assertIncludes(mechanismCode, 'self.intake.on_start()');
+assertIncludes(mechanismCode, 'self.intake.command_intake_piece()');
+const mechanismFile = generateAllOpmodes([
+  {id: 'mechanism-test', state: Blockly.serialization.workspaces.save(mechanismWorkspace)},
+]);
+assertIncludes(mechanismFile, 'class IntakeSubsystem(SubsystemBase):');
+assertIncludes(mechanismFile, 'self.drive_motor = A301(0, 3)');
+assertIncludes(mechanismFile, 'self.right_motor = A301(2, 4)');
+assertIncludes(mechanismFile, 'self._motors = [self.drive_motor, self.right_motor]');
+assertIncludes(mechanismFile, 'self.movement_drive = wpilib.DifferentialDrive(');
+assertIncludes(mechanismFile, 'def on_start(self):');
+assertIncludes(mechanismFile, 'def command_intake_piece(self):');
+assertIncludes(mechanismFile, 'def set_motor_group_power(self, motors, power):');
+assertIncludes(mechanismFile, 'InstantCommand(lambda: self.set_motor_group_power((self.drive_motor, self.right_motor), max(-1, min(1, (65) / 100.0))), self)');
+assertIncludes(mechanismFile, 'InstantCommand(lambda: self.set_motor_group_power((self.drive_motor, self.right_motor), 0), self)');
+assertIncludes(mechanismFile, 'InstantCommand(lambda: self.drive_motor.setThrottle(max(-1, min(1, (40) / 100.0))), self)');
+assertIncludes(mechanismFile, 'InstantCommand(lambda: self.movement_drive.arcadeDrive(max(-1, min(1, (30) / 100.0)), max(-1, min(1, (5) / 100.0))), self)');
+const advancedToolbox = JSON.stringify(
+  buildToolbox({includeGamepad: false, robotMode: 'advanced'}),
+);
+assertIncludes(advancedToolbox, 'sc_mechanism_run_command');
+assert(
+  !advancedToolbox.includes('sc_motor_set_power'),
+  'Advanced OpMode toolbox should not bypass owned subsystem motors',
+);
+const subsystemToolbox = JSON.stringify(
+  buildToolbox({includeGamepad: false, editor: 'subsystem', robotMode: 'advanced'}),
+);
+assertIncludes(subsystemToolbox, 'sc_subsystem_on_command');
+assertIncludes(subsystemToolbox, 'sc_motor_group');
+assertIncludes(subsystemToolbox, 'sc_motor_group_set_power');
+assertIncludes(subsystemToolbox, 'sc_motor_group_stop');
+assert(
+  !subsystemToolbox.includes('sc_subsystem_set_power'),
+  'Subsystem toolbox should not expose an implicit “my motors” command',
+);
+assertIncludes(subsystemToolbox, 'sc_motor_set_power');
+assertIncludes(subsystemToolbox, 'sc_motor_run_for_seconds');
+assertIncludes(subsystemToolbox, 'sc_motor_stop');
+assertIncludes(subsystemToolbox, 'sc_motor_set_velocity');
+assertIncludes(subsystemToolbox, 'sc_motor_set_position');
+assertIncludes(subsystemToolbox, 'sc_movement_motors');
+assertIncludes(subsystemToolbox, 'sc_drivetrain_arcade_drive');
+assertIncludes(subsystemToolbox, 'sc_drivetrain_tank_drive');
+assertIncludes(subsystemToolbox, 'sc_drivetrain_stop');
+assertIncludes(subsystemToolbox, 'sc_mecanum_drive');
+assertIncludes(subsystemToolbox, 'sc_mecanum_stop');
+subsystemWorkspace.dispose();
+mechanismWorkspace.dispose();
+setMechanisms([]);
+setRobotMode('simple');
+
+// In Simple mode, the same explicit group compiles to a readable method with a
+// loop, instead of relying on a hidden subsystem-wide motor selection.
+const motorGroupWorkspace = new Blockly.Workspace();
+const motorGroupDetails = motorGroupWorkspace.newBlock('sc_opmode_details');
+motorGroupDetails.setFieldValue('Motor Group Test', 'NAME');
+const motorGroupStart = motorGroupWorkspace.newBlock('sc_on_start');
+const motorGroupPower = motorGroupWorkspace.newBlock('sc_motor_group_set_power');
+connectValue(motorGroupPower, 'GROUP', makeMotorGroup(motorGroupWorkspace));
+connectValue(motorGroupPower, 'POWER', numberBlock(70, motorGroupWorkspace));
+connectNext(motorGroupStart, motorGroupPower);
+pythonGenerator.init(motorGroupWorkspace);
+const motorGroupCode = generateOpmodeClass(motorGroupWorkspace, pythonGenerator);
+assertIncludes(motorGroupCode, 'def block_1(self):');
+assertIncludes(motorGroupCode, 'for motor in (self.drive_motor, self.right_motor):');
+assertIncludes(motorGroupCode, 'motor.setThrottle(max(-1, min(1, (70) / 100.0))');
+motorGroupWorkspace.dispose();
+
+// ---------------------------------------------------------------------------
+// Advanced libraries: named project objects replace the old free-text target.
+// The object is constructed in every OpMode and instance blocks use its stable
+// id, so a rename cannot silently point a block at a different RobotPy object.
+// ---------------------------------------------------------------------------
+
+setExtensionInstances([]);
+const matchTimer = addExtensionInstance({
+  className: 'wpilib.Timer',
+  name: 'match_timer',
+});
+const extensionWorkspace = new Blockly.Workspace();
+const extensionDetails = extensionWorkspace.newBlock('sc_opmode_details');
+extensionDetails.setFieldValue('Library Test', 'NAME');
+const extensionStart = extensionWorkspace.newBlock('sc_on_start');
+const extensionCall = extensionWorkspace.newBlock('sc_ext_instance_call');
+assert(
+  extensionCall.getField('INSTANCE')?.constructor.name === 'FieldExtensionInstance',
+  'Advanced instance calls should use the named-object dropdown',
+);
+extensionCall.setFieldValue('wpilib.Timer', 'CLASS');
+extensionCall.setFieldValue(matchTimer.id, 'INSTANCE');
+extensionCall.setFieldValue('restart', 'METHOD');
+extensionCall.setFieldValue('', 'ARGS');
+connectNext(extensionStart, extensionCall);
+pythonGenerator.init(extensionWorkspace);
+const extensionCode = generateOpmodeClass(extensionWorkspace, pythonGenerator);
+assertIncludes(extensionCode, 'self.match_timer = wpilib.Timer()');
+assertIncludes(extensionCode, 'self.match_timer.restart()');
+const extensionFile = generateAllOpmodes([
+  {id: 'library-test', state: Blockly.serialization.workspaces.save(extensionWorkspace)},
+]);
+assertIncludes(extensionFile, 'import wpilib');
+assertIncludes(extensionFile, 'InstantCommand(self.block_1)');
+extensionWorkspace.dispose();
+setExtensionInstances([]);
+
+// The WPILib Outputs curated extension is its own toolbox category, absent by
+// default and present once added.
+assert(
+  !categoryNames.includes('WPILib Outputs'),
+  'Default toolbox must not include the WPILib Outputs extension category',
+);
+const outputsCategoryNames = buildToolbox({
+  includeGamepad: false,
+  includeWpilibOutputs: true,
+}).contents
+  .filter((item) => item.kind === 'category')
+  .map((item) => (item as {name?: string}).name);
+assert(
+  outputsCategoryNames.includes('WPILib Outputs'),
+  'WPILib Outputs should appear after adding the curated extension',
+);
+const outputsToolbox = JSON.stringify(
+  buildToolbox({includeGamepad: false, includeWpilibOutputs: true}),
+);
+assertIncludes(outputsToolbox, 'sc_wpilib_digital_output_set');
+assertIncludes(outputsToolbox, 'sc_wpilib_smartdashboard_put');
+assertIncludes(outputsToolbox, 'sc_wpilib_smartdashboard_get');
+assert(
+  !outputsToolbox.includes('sc_wpilib_digital_input'),
+  'WPILib Outputs should not include the WPILib Sensors input blocks',
+);
+
+// The onboard IMU / match-time blocks ride along in the WPILib Sensors category.
+assertIncludes(sensorsToolbox, 'sc_wpilib_imu_value');
+assertIncludes(sensorsToolbox, 'sc_wpilib_match_time');
 
 workspace.dispose();
 console.log('Blockly smoke check passed');

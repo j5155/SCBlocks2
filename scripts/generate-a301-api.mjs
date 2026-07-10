@@ -1,9 +1,14 @@
+// Projects the rev.A301 metadata out of the in-tree RobotPy metadata
+// (python_tools/generated/robotpy_data.json, produced by the Python pipeline in
+// python_tools/) into the A301 block catalog used by the default toolbox.
+//
+// Regenerate with:
+//   npm run generate:a301 -- [path/to/robotpy_data.json] [out.ts]
 import {readFileSync, writeFileSync} from 'node:fs';
 import {resolve} from 'node:path';
 
 const inputPath = resolve(
-  process.argv[2] ||
-    '../systemcore-blocks-interface/frontend/blocks/utils/generated/robotpy_data.json',
+  process.argv[2] || 'python_tools/generated/robotpy_data.json',
 );
 const outputPath = resolve(process.argv[3] || 'src/generated/a301.ts');
 
