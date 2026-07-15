@@ -67,9 +67,30 @@ export const systemCoreTheme = Blockly.Theme.defineTheme("systemcore", {
     selectedGlowOpacity: 0.35,
   },
   fontStyle: {
-    family:
-      'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    family: '"Outfit", sans-serif',
     weight: "700",
     size: 13,
+  },
+});
+
+export const systemCoreDarkTheme = Blockly.Theme.defineTheme("systemcore-dark", {
+  name: "systemcore-dark",
+  base: systemCoreTheme,
+  startHats: true,
+  componentStyles: {
+    workspaceBackgroundColour: "#0F172A",
+    toolboxBackgroundColour: "#111827",
+    toolboxForegroundColour: "#CBD5E1",
+    flyoutBackgroundColour: "#111827",
+    flyoutForegroundColour: "#CBD5E1",
+    flyoutOpacity: 1,
+    scrollbarColour: "#64748B",
+    scrollbarOpacity: 0.65,
+    insertionMarkerColour: "#60A5FA",
+    insertionMarkerOpacity: 0.45,
+    markerColour: "#60A5FA",
+    cursorColour: "#60A5FA",
+    selectedGlowColour: "#60A5FA",
+    selectedGlowOpacity: 0.45,
   },
 });

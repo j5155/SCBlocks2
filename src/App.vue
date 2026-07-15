@@ -7,11 +7,12 @@ import { createHighlighterCore, type HighlighterCore } from "shiki/core";
 import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
 import pythonLang from "shiki/langs/python.mjs";
 import lightTheme from "shiki/themes/material-theme-lighter.mjs";
+import darkTheme from "shiki/themes/github-dark.mjs";
 import {
   registerSystemCoreRenderer,
   systemCoreRendererName,
 } from "./blocklyRenderer";
-import { systemCoreTheme } from "./blocklyTheme";
+import { systemCoreDarkTheme, systemCoreTheme } from "./blocklyTheme";
 import { blocks } from "./blocks/text";
 import {
   addDevice,
@@ -99,6 +100,19 @@ import {
 const blocklyDiv = ref<HTMLDivElement | null>(null);
 const generatedCode = ref("");
 const generationStatus = ref("Ready");
+const isDark = ref(document.documentElement.classList.contains("dark"));
+
+const toggleDarkMode = () => {
+  isDark.value = !isDark.value;
+};
+
+const copyGeneratedCode = async () => {
+  await navigator.clipboard.writeText(generatedCode.value);
+  generationStatus.value = "Copied";
+  window.setTimeout(() => {
+    generationStatus.value = generatedCode.value.trim() ? "Up to date" : "Ready";
+  }, 1600);
+};
 
 // Syntax-highlighted HTML for the generated Python, produced by Shiki. Shiki's
 // highlighter is async, so we render into `highlightedCode` off a watcher and
@@ -112,7 +126,7 @@ const getHighlighter = () => {
   if (!highlighterPromise) {
     highlighterPromise = createHighlighterCore({
       langs: [pythonLang],
-      themes: [lightTheme],
+      themes: [lightTheme, darkTheme],
       engine: createJavaScriptRegexEngine(),
     });
   }
@@ -120,13 +134,13 @@ const getHighlighter = () => {
 };
 
 watch(
-  generatedCode,
-  async (code) => {
+  [generatedCode, isDark],
+  async ([code, dark]) => {
     try {
       const highlighter = await getHighlighter();
       highlightedCode.value = highlighter.codeToHtml(code, {
         lang: "python",
-        theme: "material-theme-lighter",
+        theme: dark ? "github-dark" : "material-theme-lighter",
       });
     } catch (error) {
       console.warn("Failed to highlight generated code:", error);
@@ -135,6 +149,15 @@ watch(
   },
   { immediate: true },
 );
+
+watch(isDark, (dark) => {
+  document.documentElement.classList.toggle("dark", dark);
+  localStorage.setItem("systemcore-theme", dark ? "dark" : "light");
+  workspace?.setTheme(dark ? systemCoreDarkTheme : systemCoreTheme);
+  if (workspace) {
+    resizeWorkspace();
+  }
+});
 
 // OpMode tabs.
 const tabs = ref<OpModeTab[]>([]);
@@ -936,7 +959,7 @@ onMounted(() => {
   workspace = Blockly.inject(blocklyDiv.value, {
     toolbox: { kind: "categoryToolbox", contents: [] },
     renderer: systemCoreRendererName,
-    theme: systemCoreTheme,
+    theme: isDark.value ? systemCoreDarkTheme : systemCoreTheme,
     trashcan: true,
     zoom: {
       controls: true,
@@ -1063,30 +1086,61 @@ onBeforeUnmount(() => {
 <template>
   <UApp>
     <main
-      class="flex h-screen min-w-[320px] flex-col overflow-hidden bg-slate-100 text-slate-950"
+      class="app-shell flex h-screen min-w-[320px] flex-col overflow-hidden bg-slate-100 text-slate-950"
     >
       <header
-        class="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white px-3 shadow-sm"
+        class="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-slate-200 bg-white px-4"
       >
         <div class="flex min-w-0 items-center gap-3">
+          <div class="brand-mark" aria-hidden="true">
+            <span></span><span></span><span></span>
+          </div>
           <div class="min-w-0">
-            <h1 class="truncate text-base font-extrabold tracking-tight">
+            <h1 class="truncate text-sm font-semibold tracking-tight text-slate-900">
               SystemCore Blocks
             </h1>
-            <p class="truncate text-xs font-semibold text-slate-500">
+            <p class="truncate text-[11px] text-slate-500">
               {{ activeEditorTitle }}
             </p>
           </div>
         </div>
 
-        <div class="flex shrink-0 items-center gap-1 overflow-x-auto">
-          <UBadge color="neutral" variant="soft" class="hidden sm:inline-flex">
-            {{ generationStatus }}
-          </UBadge>
+        <div class="flex shrink-0 items-center gap-0.5 overflow-x-auto">
           <UButton
             size="sm"
             color="neutral"
-            variant="soft"
+            variant="ghost"
+            icon="i-lucide-folder-kanban"
+            label="Projects"
+            @click="openProjects"
+          />
+          <UButton
+            size="sm"
+            color="neutral"
+            variant="ghost"
+            icon="i-lucide-blocks"
+            label="Libraries"
+            @click="openExtensionPicker"
+          >
+            <template v-if="extensionCount" #trailing>
+              <span class="count-pill">{{ extensionCount }}</span>
+            </template>
+          </UButton>
+          <span class="mx-1 h-5 w-px bg-slate-200" aria-hidden="true"></span>
+          <UButton
+            size="sm"
+            color="neutral"
+            variant="ghost"
+            :icon="isDark ? 'i-lucide-sun' : 'i-lucide-moon'"
+            :aria-label="isDark ? 'Use light mode' : 'Use dark mode'"
+            :title="isDark ? 'Use light mode' : 'Use dark mode'"
+            @click="toggleDarkMode"
+          />
+          <UButton
+            size="sm"
+            color="neutral"
+            variant="ghost"
+            icon="i-lucide-sliders-horizontal"
             :disabled="editingSubsystem"
             @click="opmodeSettingsOpen = true"
           >
@@ -1094,24 +1148,10 @@ onBeforeUnmount(() => {
           </UButton>
           <UButton
             size="sm"
+            icon="i-lucide-cog"
             @click="openMotors"
           >
             Robot Setup
-          </UButton>
-          <UButton
-            size="sm"
-            color="neutral"
-            variant="soft"
-            @click="openProjects"
-          >
-            Projects
-          </UButton>
-          <UButton
-            size="sm"
-            @click="openExtensionPicker"
-          >
-            Libraries
-            <span v-if="extensionCount">({{ extensionCount }})</span>
           </UButton>
         </div>
       </header>
@@ -1128,11 +1168,11 @@ onBeforeUnmount(() => {
           class="h-full min-h-0"
         >
         <section
-          class="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] bg-slate-100 p-3"
+          class="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] bg-white"
           aria-label="Block workspace"
         >
           <div
-            class="flex min-w-0 items-center gap-1.5 rounded-t-xl border border-slate-200/90  bg-white/95 p-1.5 shadow-sm"
+            class="flex min-w-0 items-center gap-1.5 border-b border-slate-200 bg-white px-2 py-1.5"
           >
             <div class="min-w-0 flex-1 overflow-x-auto scrollbar-thin scrollbar-track-transparent">
               <UTabs
@@ -1142,9 +1182,9 @@ onBeforeUnmount(() => {
                 size="sm"
                 class="min-w-max"
                 :ui="{
-                  list: 'min-w-max gap-1 rounded-lg bg-slate-100/90 p-1',
+                  list: 'min-w-max gap-0.5 bg-transparent p-0',
                   indicator: 'hidden',
-                  trigger: 'h-9 max-w-56 rounded-md px-2.5 text-xs font-semibold text-slate-600 transition data-[state=active]:bg-white data-[state=active]:text-slate-950 data-[state=active]:shadow-sm data-[state=inactive]:hover:bg-slate-200/70',
+                  trigger: 'h-8 max-w-56 rounded-md px-2.5 text-xs font-medium text-slate-500 transition data-[state=active]:bg-slate-100 data-[state=active]:text-slate-900 data-[state=inactive]:hover:bg-slate-50 data-[state=inactive]:hover:text-slate-700',
                 }"
                 @update:model-value="selectEditorTab"
               >
@@ -1172,28 +1212,25 @@ onBeforeUnmount(() => {
               </UTabs>
             </div>
 
-            <div class="flex shrink-0 items-center gap-1 border-l border-slate-200 pl-1.5">
+            <div class="flex shrink-0 items-center gap-1 border-l border-slate-200 pl-2">
               <UDropdownMenu :items="newEditorMenuItems" :content="{ align: 'end' }">
-                <UButton size="xs" color="primary" variant="solid">
-                  New
-                  <span class="ml-0.5 text-[10px] opacity-75" aria-hidden="true">⌄</span>
-                </UButton>
+                <UButton size="xs" color="neutral" variant="soft" icon="i-lucide-plus" label="New" />
               </UDropdownMenu>
               <UDropdownMenu :items="activeEditorMenuItems" :content="{ align: 'end' }">
                 <UButton
                   size="xs"
                   color="neutral"
                   variant="ghost"
+                  icon="i-lucide-ellipsis"
                   aria-label="Current tab actions"
                 >
-                  <span class="text-base leading-none" aria-hidden="true">⋯</span>
                 </UButton>
               </UDropdownMenu>
             </div>
           </div>
 
           <div
-            class="min-h-0 overflow-hidden rounded-b-xl border border-slate-200 border-t-0 bg-white shadow-sm"
+            class="min-h-0 overflow-hidden bg-white"
           >
             <div id="blocklyDiv" ref="blocklyDiv" class="h-full w-full"></div>
           </div>
@@ -1204,19 +1241,35 @@ onBeforeUnmount(() => {
              divider leaves; drag the divider between the two to resize. -->
         <UDashboardPanel id="code" class="h-full min-h-0">
         <aside
-          class="flex min-h-0 flex-1 flex-col overflow-hidden bg-white"
+          class="flex min-h-0 flex-1 flex-col overflow-hidden border-l border-slate-200 bg-white"
           aria-label="Generated code and status"
         >
+            <div class="flex h-11 shrink-0 items-center justify-between gap-3 border-b border-slate-200 px-3">
+              <div class="flex min-w-0 items-center gap-2">
+                <span class="size-2 rounded-full bg-emerald-500" aria-hidden="true"></span>
+                <span class="text-xs font-medium text-slate-700">robot.py</span>
+                <span class="truncate text-[11px] text-slate-400">{{ generationStatus }}</span>
+              </div>
+              <UButton
+                size="xs"
+                color="neutral"
+                variant="ghost"
+                icon="i-lucide-copy"
+                aria-label="Copy generated Python"
+                title="Copy generated Python"
+                @click="copyGeneratedCode"
+              />
+            </div>
             <div
               v-if="highlightedCode"
               id="generatedCode"
-              class="shiki-code h-full min-h-0 overflow-auto text-[0.8rem] leading-6"
+              class="shiki-code h-full min-h-0 overflow-auto font-mono text-[0.8rem] leading-6"
               v-html="highlightedCode"
             ></div>
             <pre
               v-else
               id="generatedCode"
-              class="h-full min-h-0 overflow-auto  p-3 text-[0.8rem] leading-6 text-slate-100"
+              class="h-full min-h-0 overflow-auto p-3 font-mono text-[0.8rem] leading-6 text-slate-100"
             ><code>{{ generatedCode }}</code></pre>
         </aside>
         </UDashboardPanel>
@@ -1231,8 +1284,9 @@ onBeforeUnmount(() => {
       :ui="{ content: 'w-[calc(100vw-2rem)] max-w-lg' }"
     >
       <template #body>
-        <div class="grid gap-4">
-          <label class="grid gap-1.5 text-sm font-bold text-slate-700">
+        <div class="grid gap-5">
+          <div class="grid gap-4 sm:grid-cols-2">
+          <label class="grid gap-1.5 text-xs font-medium text-slate-600">
             Name
             <UInput
               :model-value="activeTabView?.name ?? ''"
@@ -1240,7 +1294,7 @@ onBeforeUnmount(() => {
               @update:model-value="updateActiveOpmodeField('NAME', String($event ?? ''))"
             />
           </label>
-          <label class="grid gap-1.5 text-sm font-bold text-slate-700">
+          <label class="grid gap-1.5 text-xs font-medium text-slate-600">
             Runs as
             <USelect
               :model-value="activeTabView?.type ?? 'Teleop'"
@@ -1248,20 +1302,22 @@ onBeforeUnmount(() => {
               @update:model-value="updateActiveOpmodeType"
             />
           </label>
+          </div>
           <UCheckbox
             :model-value="activeTabView?.enabled ?? true"
             label="Show this OpMode in the driver station"
             description="Disable it temporarily without deleting its blocks."
-            class="rounded-lg border border-slate-200 bg-slate-50 p-3"
+            class="border-y border-slate-200 py-3"
             @update:model-value="updateActiveOpmodeEnabled"
           />
-          <p class="rounded-lg bg-primary-50 px-3 py-2 text-xs font-semibold leading-5 text-primary-800">
+          <p class="flex gap-2 text-xs leading-5 text-slate-500">
+            <UIcon name="i-lucide-info" class="mt-0.5 size-4 shrink-0 text-primary-500" />
             Separate “when this OpMode starts” stacks run in parallel. Triggers stay active for the whole OpMode.
           </p>
         </div>
       </template>
       <template #footer="{ close }">
-        <UButton color="neutral" variant="ghost" @click="close">Done</UButton>
+        <UButton color="primary" @click="close">Done</UButton>
       </template>
     </UModal>
 
@@ -1280,13 +1336,14 @@ onBeforeUnmount(() => {
       }"
     >
       <template #body>
-        <div class="flex max-h-[min(62vh,560px)] min-h-0 flex-col gap-5 overflow-y-auto pr-1">
+        <div class="flex max-h-[min(66vh,600px)] min-h-0 flex-col gap-6 overflow-y-auto pr-1">
           <section aria-labelledby="programming-style-heading">
             <div class="mb-2">
-              <h2 id="programming-style-heading" class="text-sm font-black text-slate-900">
-                First, choose a programming style
+              <p class="modal-section-label">Programming model</p>
+              <h2 id="programming-style-heading" class="mt-1 text-sm font-semibold text-slate-900">
+                Choose how your robot is organized
               </h2>
-              <p class="mt-0.5 text-xs font-semibold leading-5 text-slate-500">
+              <p class="mt-1 text-xs leading-5 text-slate-500">
                 You can change this later. Start simple unless your team is ready to give each robot part its own blocks.
               </p>
             </div>
@@ -1294,24 +1351,24 @@ onBeforeUnmount(() => {
               <button
                 type="button"
                 :aria-pressed="robotMode === 'simple'"
-                class="rounded-xl border-2 p-3 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
-                :class="robotMode === 'simple' ? 'border-primary-500 bg-primary-50 shadow-sm' : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'"
+                class="rounded-lg border p-3 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
+                :class="robotMode === 'simple' ? 'border-primary-500 bg-primary-50' : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'"
                 @click="updateRobotMode('simple')"
               >
-                <span class="block text-sm font-black text-slate-900">Flat</span>
-                <span class="mt-1 block text-xs font-semibold leading-5 text-slate-600">
+                <span class="block text-sm font-semibold text-slate-900">Flat</span>
+                <span class="mt-1 block text-xs leading-5 text-slate-500">
                   Put motor blocks right into an OpMode. Great for learning and small robots.
                 </span>
               </button>
               <button
                 type="button"
                 :aria-pressed="robotMode === 'advanced'"
-                class="rounded-xl border-2 p-3 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
-                :class="robotMode === 'advanced' ? 'border-primary-500 bg-primary-50 shadow-sm' : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'"
+                class="rounded-lg border p-3 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
+                :class="robotMode === 'advanced' ? 'border-primary-500 bg-primary-50' : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'"
                 @click="updateRobotMode('advanced')"
               >
-                <span class="block text-sm font-black text-slate-900">Structured</span>
-                <span class="mt-1 block text-xs font-semibold leading-5 text-slate-600">
+                <span class="block text-sm font-semibold text-slate-900">Structured</span>
+                <span class="mt-1 block text-xs leading-5 text-slate-500">
                   Separate robot mechanisms into their own structured spaces. More flexible, but more complex. Great for more complicated robots.
                 </span>
               </button>
@@ -1321,12 +1378,12 @@ onBeforeUnmount(() => {
           <nav
             v-if="robotMode === 'advanced'"
             aria-label="Robot setup steps"
-            class="grid grid-cols-2 gap-2 rounded-xl bg-slate-100 p-1.5"
+            class="grid grid-cols-2 border-b border-slate-200"
           >
             <button
               type="button"
-              class="rounded-lg px-3 py-2 text-left text-xs font-black transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
-              :class="setupStep === 'motors' ? 'bg-white text-primary-700 shadow-sm' : 'text-slate-500 hover:bg-slate-200/70'"
+              class="border-b-2 px-3 py-2.5 text-left text-xs font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+              :class="setupStep === 'motors' ? 'border-primary-500 text-primary-700' : 'border-transparent text-slate-500 hover:text-slate-700'"
               @click="setupStep = 'motors'"
             >
               <span class="mr-1.5 inline-grid size-5 place-items-center rounded-full bg-primary-100 text-[0.7rem] text-primary-700">1</span>
@@ -1334,8 +1391,8 @@ onBeforeUnmount(() => {
             </button>
             <button
               type="button"
-              class="rounded-lg px-3 py-2 text-left text-xs font-black transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
-              :class="setupStep === 'subsystems' ? 'bg-white text-primary-700 shadow-sm' : 'text-slate-500 hover:bg-slate-200/70'"
+              class="border-b-2 px-3 py-2.5 text-left text-xs font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+              :class="setupStep === 'subsystems' ? 'border-primary-500 text-primary-700' : 'border-transparent text-slate-500 hover:text-slate-700'"
               @click="setupStep = 'subsystems'"
             >
               <span class="mr-1.5 inline-grid size-5 place-items-center rounded-full bg-primary-100 text-[0.7rem] text-primary-700">2</span>
@@ -1346,13 +1403,13 @@ onBeforeUnmount(() => {
           <section v-if="setupStep === 'motors' || robotMode === 'simple'" aria-labelledby="motors-heading">
             <div class="mb-3 flex flex-wrap items-start justify-between gap-3">
               <div>
-                <p class="text-xs font-black uppercase tracking-wide text-primary-700">Step 1</p>
-                <h2 id="motors-heading" class="text-base font-black text-slate-900">Name your motors</h2>
-                <p class="mt-0.5 max-w-xl text-xs font-semibold leading-5 text-slate-500">
+                <p class="modal-section-label">Step 1</p>
+                <h2 id="motors-heading" class="mt-1 text-base font-semibold text-slate-900">Name your motors</h2>
+                <p class="mt-1 max-w-xl text-xs leading-5 text-slate-500">
                   Use names from your robot, like “Left Drive” or “Intake.” Those names show up on your blocks.
                 </p>
               </div>
-              <UButton size="sm" color="primary" @click="addMotor">+ Add motor</UButton>
+              <UButton size="sm" color="primary" icon="i-lucide-plus" label="Add motor" @click="addMotor" />
             </div>
 
             <div v-if="!motors.length" class="rounded-xl border-2 border-dashed border-primary-200 bg-primary-50/60 p-5 text-center">
@@ -1367,9 +1424,9 @@ onBeforeUnmount(() => {
               <li
                 v-for="motor in motors"
                 :key="motor.id"
-                class="grid gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm sm:grid-cols-[minmax(0,1fr)_120px_120px_auto] sm:items-end"
+                class="grid gap-3 border-b border-slate-200 py-3 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_110px_110px_auto] sm:items-end"
               >
-                <label class="grid min-w-0 gap-1.5 text-xs font-black text-slate-700">
+                <label class="grid min-w-0 gap-1.5 text-xs font-medium text-slate-600">
                   Motor name
                   <UInput
                     size="sm"
@@ -1377,9 +1434,9 @@ onBeforeUnmount(() => {
                     placeholder="e.g. Intake"
                     @update:model-value="onMotorName(motor.id, $event)"
                   />
-                  <span class="font-semibold text-slate-400">{{ motorUsageLabel(motor.id) }}</span>
+                  <span class="text-[11px] text-slate-400">{{ motorUsageLabel(motor.id) }}</span>
                 </label>
-                <label class="grid gap-1.5 text-xs font-black text-slate-700">
+                <label class="grid gap-1.5 text-xs font-medium text-slate-600">
                   CAN bus
                   <UInputNumber
                     size="sm"
@@ -1390,7 +1447,7 @@ onBeforeUnmount(() => {
                     @update:model-value="onMotorBus(motor.id, $event)"
                   />
                 </label>
-                <label class="grid gap-1.5 text-xs font-black text-slate-700">
+                <label class="grid gap-1.5 text-xs font-medium text-slate-600">
                   Motor ID
                   <UInputNumber
                     size="sm"
@@ -1427,13 +1484,13 @@ onBeforeUnmount(() => {
           <section v-else aria-labelledby="robot-parts-heading">
             <div class="mb-3 flex flex-wrap items-start justify-between gap-3">
               <div>
-                <p class="text-xs font-black uppercase tracking-wide text-primary-700">Step 2</p>
-                <h2 id="robot-parts-heading" class="text-base font-black text-slate-900">Make robot parts</h2>
-                <p class="mt-0.5 max-w-xl text-xs font-semibold leading-5 text-slate-500">
+                <p class="modal-section-label">Step 2</p>
+                <h2 id="robot-parts-heading" class="mt-1 text-base font-semibold text-slate-900">Make robot parts</h2>
+                <p class="mt-1 max-w-xl text-xs leading-5 text-slate-500">
                   A robot part (also called a subsystem) owns the motors, sensors, and RobotPy objects that work together, like an intake, arm, or launcher. It gets its own Blocks tab.
                 </p>
               </div>
-              <UButton size="sm" color="primary" @click="addProjectMechanism">+ Add robot part</UButton>
+              <UButton size="sm" color="primary" icon="i-lucide-plus" label="Add robot part" @click="addProjectMechanism" />
             </div>
 
             <div v-if="!motors.length" class="rounded-xl border border-amber-200 bg-amber-50 p-4">
@@ -1458,10 +1515,10 @@ onBeforeUnmount(() => {
               <li
                 v-for="mechanism in mechanisms"
                 :key="mechanism.id"
-                class="rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
+                class="border-b border-slate-200 py-4 last:border-b-0"
               >
                 <div class="flex flex-wrap items-start justify-between gap-3">
-                  <label class="grid min-w-0 flex-1 gap-1.5 text-xs font-black text-slate-700">
+                  <label class="grid min-w-0 flex-1 gap-1.5 text-xs font-medium text-slate-600">
                     Robot part name
                     <UInput
                       size="sm"
@@ -1487,8 +1544,8 @@ onBeforeUnmount(() => {
                 </div>
 
                 <fieldset class="mt-3">
-                  <legend class="text-xs font-black text-slate-700">Which motors move this part?</legend>
-                  <p class="mt-0.5 text-xs font-semibold leading-5 text-slate-500">
+                  <legend class="text-xs font-medium text-slate-700">Which motors move this part?</legend>
+                  <p class="mt-1 text-xs leading-5 text-slate-500">
                     Check every motor that belongs here. Sensors and named RobotPy objects used in this part are wired automatically from its Blocks workspace.
                   </p>
                   <div class="mt-2 grid gap-2 sm:grid-cols-2">
@@ -1537,7 +1594,7 @@ onBeforeUnmount(() => {
     >
       <template #body>
         <div class="flex max-h-[min(58vh,520px)] min-h-0 flex-col gap-3">
-          <label class="grid gap-1.5 text-sm font-bold text-slate-700">
+          <label class="grid gap-1.5 text-xs font-medium text-slate-600">
             Current project name
             <UInput
               :model-value="projectName"
@@ -1546,21 +1603,24 @@ onBeforeUnmount(() => {
             />
           </label>
 
-          <div class="flex items-center justify-between gap-3">
-            <USeparator label="Saved in this browser" class="flex-1" />
-            <UBadge color="success" variant="soft" size="xs">Autosaves</UBadge>
+          <div class="flex items-center justify-between gap-3 border-b border-slate-200 pb-2">
+            <p class="modal-section-label">Saved in this browser</p>
+            <span class="flex items-center gap-1.5 text-[11px] text-slate-500">
+              <span class="size-1.5 rounded-full bg-emerald-500"></span>
+              Autosaving
+            </span>
           </div>
 
           <ul class="grid min-h-0 gap-1 overflow-y-auto">
             <li
               v-for="project in storedProjects"
               :key="project.id"
-              class="flex items-center gap-3 rounded-lg border p-2.5"
-              :class="project.id === activeProjectId ? 'border-primary-300 bg-primary-50' : 'border-slate-200 bg-white'"
+              class="flex items-center gap-3 border-b border-slate-200 px-1 py-3 last:border-b-0"
+              :class="project.id === activeProjectId ? 'bg-primary-50/60' : 'bg-white'"
             >
               <div class="min-w-0 flex-1">
-                <p class="truncate text-sm font-black text-slate-900">{{ project.name }}</p>
-                <p class="text-xs font-semibold text-slate-400">
+                <p class="truncate text-sm font-medium text-slate-900">{{ project.name }}</p>
+                <p class="mt-0.5 text-[11px] text-slate-400">
                   {{ project.tabs.length }} {{ project.tabs.length === 1 ? "OpMode" : "OpModes" }} · saved {{ new Date(project.updatedAt).toLocaleString() }}
                 </p>
               </div>
@@ -1589,7 +1649,7 @@ onBeforeUnmount(() => {
 
       <template #footer="{ close }">
         <div class="flex flex-wrap gap-2">
-          <UButton color="primary" @click="createProject">+ New project</UButton>
+          <UButton color="primary" icon="i-lucide-plus" label="New project" @click="createProject" />
           <UButton color="neutral" variant="soft" @click="downloadCurrentProject">
             Download backup
           </UButton>
@@ -1621,27 +1681,27 @@ onBeforeUnmount(() => {
     >
       <template #body>
         <div class="flex max-h-[min(58vh,520px)] min-h-0 flex-col gap-3 overflow-auto">
-          <USeparator label="Recommended block libraries" />
+          <p class="modal-section-label border-b border-slate-200 pb-2">Recommended block libraries</p>
 
           <ul class="grid gap-2 sm:grid-cols-2">
             <li
               v-for="extension in handWrappedExtensions"
               :key="extension.id"
-              class="flex min-h-32 flex-col justify-between gap-3 rounded-lg border border-slate-200 bg-white p-3 shadow-sm"
+              class="flex min-h-32 flex-col justify-between gap-3 rounded-lg border border-slate-200 bg-white p-3"
               :style="{ '--extension-color': extension.color }"
             >
               <div class="flex min-w-0 items-start gap-3">
                 <span
-                  class="grid size-11 shrink-0 place-items-center rounded-lg bg-[var(--extension-color)] text-lg font-black text-white shadow-sm"
+                  class="grid size-10 shrink-0 place-items-center rounded-md bg-[var(--extension-color)] text-sm font-semibold text-white"
                   aria-hidden="true"
                 >
                   WP
                 </span>
                 <div class="min-w-0">
-                  <h3 class="truncate text-sm font-black text-slate-900">
+                  <h3 class="truncate text-sm font-semibold text-slate-900">
                     {{ extension.name }}
                   </h3>
-                  <p class="mt-1 text-xs font-semibold leading-5 text-slate-500">
+                  <p class="mt-1 text-xs leading-5 text-slate-500">
                     {{ extension.summary }}
                   </p>
                 </div>
@@ -1670,17 +1730,18 @@ onBeforeUnmount(() => {
             </li>
           </ul>
 
-          <div class="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs font-semibold leading-5 text-blue-900">
+          <div class="flex gap-2 border-y border-blue-100 bg-blue-50/60 px-3 py-2.5 text-xs leading-5 text-blue-900">
+            <UIcon name="i-lucide-info" class="mt-0.5 size-4 shrink-0" />
             Advanced classes are an escape hatch for RobotPy APIs without a dedicated block library. Add a named object, then choose that object from the block instead of typing a fragile <code>self...</code> target.
           </div>
 
           <template v-if="extensionObjects.length">
-            <USeparator label="Named RobotPy objects" />
+            <p class="modal-section-label border-b border-slate-200 pb-2">Named RobotPy objects</p>
             <ul class="grid gap-2">
               <li
                 v-for="object in extensionObjects"
                 :key="object.id"
-                class="grid gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:grid-cols-[minmax(0,0.7fr)_minmax(0,1fr)_auto] sm:items-center"
+                class="grid gap-2 border-b border-slate-200 py-2.5 last:border-b-0 sm:grid-cols-[minmax(0,0.7fr)_minmax(0,1fr)_auto] sm:items-center"
               >
                 <UInput
                   :model-value="object.name"
@@ -1690,7 +1751,7 @@ onBeforeUnmount(() => {
                 <UInput
                   :model-value="object.args"
                   placeholder="constructor arguments (optional)"
-                  :ui="{ leading: 'font-mono text-xs' }"
+                  :ui="{ leading: 'text-xs' }"
                   @update:model-value="updateExtensionObjectArgs(object.id, $event)"
                 >
                   <template #leading>
@@ -1708,10 +1769,11 @@ onBeforeUnmount(() => {
             v-model="pickerQuery"
             size="lg"
             type="search"
+            icon="i-lucide-search"
             placeholder="Search classes (e.g. A301, Gyro, Servo)..."
           />
 
-          <USeparator label="Advanced RobotPy classes" />
+          <p class="modal-section-label border-b border-slate-200 pb-2">Advanced RobotPy classes</p>
 
           <div v-if="catalogLoading" class="grid gap-2">
             <USkeleton
@@ -1732,14 +1794,14 @@ onBeforeUnmount(() => {
             <li
               v-for="cls in filteredClasses"
               :key="cls.className"
-              class="flex items-center justify-between gap-3 rounded-lg px-3 py-2 hover:bg-slate-50"
+              class="flex items-center justify-between gap-3 border-b border-slate-100 px-1 py-2.5 last:border-b-0 hover:bg-slate-50"
             >
               <div class="min-w-0">
-                <span class="block truncate text-sm font-bold">
+                <span class="block truncate text-sm font-medium text-slate-800">
                   {{ shortName(cls.className) }}
                 </span>
                 <span
-                  class="block truncate text-xs font-semibold text-slate-400"
+                  class="block truncate text-xs text-slate-400"
                 >
                   {{ cls.className }}
                 </span>
